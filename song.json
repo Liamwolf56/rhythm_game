@@ -1,14 +1,53 @@
 {
-  "song_file": "song.mp3",
-  "bpm": 120,
-  "notes": [
-    {"lane": 0, "time": 3.0},
-    {"lane": 1, "time": 4.5},
-    {"lane": 2, "time": 6.0},
-    {"lane": 3, "time": 7.5},
-    {"lane": 1, "time": 9.0},
-    {"lane": 2, "time": 9.0},
-    {"lane": 0, "time": 10.5},
-    {"lane": 3, "time": 12.0}
+  "levels": [
+    {
+      "level_id": 1,
+      "title": "Level 1: Beginner Rhythm",
+      "mode": "standard",
+      "speed": 5.0,
+      "hit_window": 0.350,
+      "notes": [
+        {"lane": 0, "time": 3.0},
+        {"lane": 1, "time": 4.5},
+        {"lane": 2, "time": 6.0},
+        {"lane": 3, "time": 7.5},
+        {"lane": 1, "time": 9.0},
+        {"lane": 2, "time": 9.0},
+        {"lane": 0, "time": 10.5},
+        {"lane": 3, "time": 12.0}
+      ]
+    },
+    {
+      "level_id": 2,
+      "title": "Level 2: Speed Run",
+      "mode": "speed",
+      "speed": 12.0,
+      "hit_window": 0.200,
+      "notes": [
+        {"lane": 0, "time": 2.0},
+        {"lane": 1, "time": 2.8},
+        {"lane": 2, "time": 3.6},
+        {"lane": 3, "time": 4.4},
+        {"lane": 2, "time": 5.2},
+        {"lane": 1, "time": 6.0},
+        {"lane": 0, "time": 6.8},
+        {"lane": 3, "time": 7.6}
+      ]
+    },
+    {
+      "level_id": 3,
+      "title": "Level 3: Dual Lane Rush",
+      "mode": "dual",
+      "speed": 7.0,
+      "hit_window": 0.300,
+      "notes": [
+        {"lane": 0, "time": 2.5},
+        {"lane": 1, "time": 3.5},
+        {"lane": 0, "time": 4.5},
+        {"lane": 1, "time": 5.0},
+        {"lane": 0, "time": 6.0},
+        {"lane": 1, "time": 7.0}
+      ]
+    }
   ]
 }
