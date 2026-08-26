@@ -2,15 +2,20 @@
   "levels": [
     {
       "level_id": 1,
-      "title": "Level 1: Piano Track",
+      "title": "Level 1: Piano Track (Custom Song)",
       "type": "piano",
       "speed": 6.0,
       "hit_window": 0.350,
+      "song_file": "song.mp3",
       "notes": [
         {"lane": 0, "time": 3.0},
         {"lane": 1, "time": 4.5},
         {"lane": 2, "time": 6.0},
-        {"lane": 3, "time": 7.5}
+        {"lane": 3, "time": 7.5},
+        {"lane": 1, "time": 9.0},
+        {"lane": 2, "time": 9.0},
+        {"lane": 0, "time": 10.5},
+        {"lane": 3, "time": 12.0}
       ]
     },
     {
@@ -22,14 +27,15 @@
         {"time": 3.0},
         {"time": 5.0},
         {"time": 7.0},
-        {"time": 9.0}
+        {"time": 9.0},
+        {"time": 11.0}
       ]
     },
     {
       "level_id": 3,
       "title": "Level 3: Echo Beat Challenge",
       "type": "echo",
-      "sequence": ["KEY_UP", "KEY_DOWN", "KEY_LEFT", "KEY_RIGHT"]
+      "sequence": ["KEY_UP", "KEY_DOWN", "KEY_LEFT", "KEY_RIGHT", "KEY_UP"]
     }
   ]
 }
