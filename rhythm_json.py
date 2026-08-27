@@ -5,8 +5,9 @@ import time
 
 os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = '1'
 import pygame
+import numpy as np
 
-pygame.mixer.init()
+pygame.mixer.init(frequency=44100, size=-16, channels=2, buffer=512)
 
 LANES = ['D', 'F', 'J', 'K']
 LANE_KEYS = [ord('d'), ord('f'), ord('j'), ord('k'), ord('D'), ord('F'), ord('J'), ord('K')]
@@ -16,6 +17,50 @@ KEY_MAP = {
     ord('j'): 2, ord('J'): 2,
     ord('k'): 3, ord('K'): 3
 }
+
+HIGH_SCORE_FILE = "high_scores.json"
+
+# --- AUDIO SYNTHESIZER FOR HIT SOUNDS ---
+def generate_hit_sound(frequency=520, duration=0.06):
+    """Generates a quick synthetic hit pop sound in memory."""
+    sample_rate = 44100
+    n_samples = int(sample_rate * duration)
+    t = np.linspace(0, duration, n_samples, False)
+    wave = np.sin(2 * np.pi * frequency * t)
+    envelope = np.exp(-t * 35)
+    audio_data = (wave * envelope * 32767).astype(np.int16)
+    stereo_data = np.repeat(audio_data[:, np.newaxis], 2, axis=1)
+    return pygame.sndarray.make_sound(stereo_data)
+
+try:
+    LANE_SOUNDS = [
+        generate_hit_sound(440, 0.06),  # D - A4
+        generate_hit_sound(554, 0.06),  # F - C#5
+        generate_hit_sound(659, 0.06),  # J - E5
+        generate_hit_sound(880, 0.06)   # K - A5
+    ]
+except Exception:
+    LANE_SOUNDS = [None, None, None, None]
+
+# --- HIGH SCORE PERSISTENCE ---
+def load_high_scores():
+    if os.path.exists(HIGH_SCORE_FILE):
+        try:
+            with open(HIGH_SCORE_FILE, "r") as f:
+                return json.load(f)
+        except Exception:
+            return {}
+    return {}
+
+def save_high_score(level_id, score):
+    scores = load_high_scores()
+    current_high = scores.get(str(level_id), 0)
+    if score > current_high:
+        scores[str(level_id)] = score
+        with open(HIGH_SCORE_FILE, "w") as f:
+            json.dump(scores, f, indent=2)
+        return True, score
+    return False, current_high
 
 # --- LEVEL 1: PIANO TRACK ---
 def play_piano_level(stdscr, level_data):
@@ -62,6 +107,11 @@ def play_piano_level(stdscr, level_data):
 
         if key in LANE_KEYS:
             target_lane = KEY_MAP[key]
+            
+            # Play hit sound effect for corresponding lane
+            if LANE_SOUNDS[target_lane]:
+                LANE_SOUNDS[target_lane].play()
+
             closest_note, min_diff = None, float('inf')
             for note in active_notes:
                 if note["lane"] == target_lane and not note["hit"] and not note["missed"]:
@@ -113,6 +163,17 @@ def play_piano_level(stdscr, level_data):
 
     if audio_active: pygame.mixer.music.stop()
 
+    # Save and display high scores
+    is_new_high, best_score = save_high_score(level_data.get("level_id", 1), score)
+    stdscr.erase()
+    stdscr.addstr(4, 5, f"LEVEL COMPLETE! Score: {score}", curses.A_BOLD)
+    if is_new_high:
+        stdscr.addstr(6, 5, "★ NEW HIGH SCORE! ★", curses.A_BOLD | curses.A_REVERSE)
+    else:
+        stdscr.addstr(6, 5, f"Personal Best: {best_score}")
+    stdscr.refresh()
+    time.sleep(2.0)
+
 # --- LEVEL 2: FROG JUMP ---
 def play_frog_level(stdscr, level_data):
     stdscr.nodelay(True)
@@ -128,6 +189,7 @@ def play_frog_level(stdscr, level_data):
             is_jumping = True
             jump_start = current_time
             score += 50
+            if LANE_SOUNDS[0]: LANE_SOUNDS[0].play()
 
         if is_jumping and (current_time - jump_start > 0.4): is_jumping = False
 
@@ -150,6 +212,8 @@ def play_frog_level(stdscr, level_data):
         stdscr.refresh()
         time.sleep(0.01)
         if obstacles and current_time > (obstacles[-1]["time"] + 2.0): break
+
+    save_high_score(level_data.get("level_id", 2), score)
 
 # --- LEVEL 3: ECHO BEAT ---
 def play_echo_level(stdscr, level_data):
@@ -180,23 +244,28 @@ def play_echo_level(stdscr, level_data):
         if key == 27: return
         if key in key_dict:
             user_seq.append(key_dict[key])
+            if LANE_SOUNDS[len(user_seq) % 4]: LANE_SOUNDS[len(user_seq) % 4].play()
             stdscr.addstr(6, 2 + (len(user_seq) * 12), f"[{key_dict[key]}]")
             stdscr.refresh()
 
     time.sleep(0.5)
     stdscr.erase()
-    if user_seq == sequence: stdscr.addstr(4, 5, "SUCCESS! Sequence Matched!", curses.A_BOLD)
-    else: stdscr.addstr(4, 5, "FAILED! Mismatch.", curses.A_BOLD)
+    if user_seq == sequence:
+        score = 500
+        stdscr.addstr(4, 5, f"SUCCESS! Sequence Matched! (+{score} pts)", curses.A_BOLD)
+        save_high_score(level_data.get("level_id", 3), score)
+    else:
+        stdscr.addstr(4, 5, "FAILED! Mismatch.", curses.A_BOLD)
     stdscr.refresh()
     time.sleep(1.5)
 
-# --- LEVEL 4: NOODLE SLURP (HOLD KEY GAME) ---
+# --- LEVEL 4: NOODLE SLURP ---
 def play_noodle_level(stdscr, level_data):
     stdscr.nodelay(True)
     stdscr.timeout(0)
     noodles = level_data.get("noodles", [])
 
-    score, combo = 0, 0
+    score = 0
     feedback = ""
     start_time = time.perf_counter()
 
@@ -211,22 +280,17 @@ def play_noodle_level(stdscr, level_data):
         stdscr.addstr(1, 2, "LEVEL 4: NOODLE SLURP | Hold SPACEBAR while noodles pass through mouth!")
         stdscr.addstr(2, 2, f"Score: {score} | Time: {current_time:.1f}s | Feedback: {feedback}")
 
-        mouth_x = 15
-        mouth_y = 6
+        mouth_x, mouth_y = 15, 6
         stdscr.addstr(mouth_y - 1, mouth_x - 4, "┌──────┐")
         mouth_str = "│ ( >◡< ) │" if is_holding_space else "│ ( >o< ) │"
         stdscr.addstr(mouth_y, mouth_x - 4, mouth_str, curses.A_BOLD)
         stdscr.addstr(mouth_y + 1, mouth_x - 4, "└──────┘")
 
-        # Track active slurp
         actively_slurping = False
         for ndl in noodles:
             start_t = ndl["time"]
             end_t = start_t + ndl["duration"]
-
-            # Draw approaching/passing noodle segment
-            t_diff = start_t - current_time
-            head_x = int(mouth_x + (t_diff * 10))
+            head_x = int(mouth_x + ((start_t - current_time) * 10))
             tail_x = int(head_x + (ndl["duration"] * 10))
 
             if start_t <= current_time <= end_t:
@@ -248,7 +312,9 @@ def play_noodle_level(stdscr, level_data):
         time.sleep(0.015)
         if noodles and current_time > (noodles[-1]["time"] + noodles[-1]["duration"] + 1.5): break
 
-# --- LEVEL 5: SPACE BEAT BLAST (SECTOR SHOOTER) ---
+    save_high_score(level_data.get("level_id", 4), score)
+
+# --- LEVEL 5: SPACE BEAT BLAST ---
 def play_space_level(stdscr, level_data):
     stdscr.nodelay(True)
     stdscr.timeout(0)
@@ -274,7 +340,8 @@ def play_space_level(stdscr, level_data):
 
         if pressed_sector != -1:
             lasers.append({"sector": pressed_sector, "start_time": current_time})
-            # Check hit against enemy
+            if LANE_SOUNDS[pressed_sector]: LANE_SOUNDS[pressed_sector].play()
+
             for enemy in active_enemies:
                 if enemy["sector"] == pressed_sector and not enemy["destroyed"]:
                     diff = abs(enemy["time"] - current_time)
@@ -290,18 +357,15 @@ def play_space_level(stdscr, level_data):
         sector_xs = [10, 25, 40]
         ship_y = height - 4
 
-        # Draw Sectors & Player Cannons
         for s_idx, x in enumerate(sector_xs):
             stdscr.addstr(ship_y, x - 1, f"[{s_idx + 1}]^", curses.A_BOLD)
 
-        # Draw Lasers
         for laser in lasers:
             elapsed = current_time - laser["start_time"]
             if elapsed < 0.2:
                 lx = sector_xs[laser["sector"]] + 1
                 for ly in range(4, ship_y): stdscr.addch(ly, lx, '|', curses.A_BOLD)
 
-        # Draw Enemies
         for enemy in active_enemies:
             if enemy["destroyed"]: continue
             t_diff = enemy["time"] - current_time
@@ -314,6 +378,8 @@ def play_space_level(stdscr, level_data):
         time.sleep(0.01)
         if active_enemies and current_time > (enemies[-1]["time"] + 2.0): break
 
+    save_high_score(level_data.get("level_id", 5), score)
+
 # --- MENU ROUTER ---
 def main(stdscr):
     curses.curs_set(0)
@@ -324,16 +390,20 @@ def main(stdscr):
     else: levels = []
 
     while True:
+        high_scores = load_high_scores()
         stdscr.nodelay(False)
         stdscr.erase()
-        stdscr.addstr(1, 2, "==========================================", curses.A_BOLD)
-        stdscr.addstr(2, 2, "     5-LEVEL RHYTHM MINI-GAME ENGINE      ", curses.A_BOLD)
-        stdscr.addstr(3, 2, "==========================================", curses.A_BOLD)
+        stdscr.addstr(1, 2, "==========================================================", curses.A_BOLD)
+        stdscr.addstr(2, 2, "           5-LEVEL RHYTHM MINI-GAME ENGINE                ", curses.A_BOLD)
+        stdscr.addstr(3, 2, "==========================================================", curses.A_BOLD)
 
         for i, lvl in enumerate(levels):
-            stdscr.addstr(5 + i, 4, f"{i + 1}. {lvl.get('title', 'Untitled')}")
+            lvl_id = str(lvl.get("level_id", i + 1))
+            best = high_scores.get(lvl_id, 0)
+            title = lvl.get('title', 'Untitled')
+            stdscr.addstr(5 + i, 4, f"{i + 1}. {title:<36} | High Score: {best}")
 
-        stdscr.addstr(12, 2, "Press 1-5 to play. Press 'Q' to quit.")
+        stdscr.addstr(13, 2, "Press 1-5 to play. Press 'Q' to quit.")
         stdscr.refresh()
 
         key = stdscr.getch()
