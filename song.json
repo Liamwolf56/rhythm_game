@@ -36,6 +36,32 @@
       "title": "Level 3: Echo Beat Challenge",
       "type": "echo",
       "sequence": ["KEY_UP", "KEY_DOWN", "KEY_LEFT", "KEY_RIGHT", "KEY_UP"]
+    },
+    {
+      "level_id": 4,
+      "title": "Level 4: Noodle Slurp Hold",
+      "type": "noodle",
+      "hit_window": 0.350,
+      "noodles": [
+        {"time": 3.0, "duration": 1.5},
+        {"time": 6.0, "duration": 2.0},
+        {"time": 9.5, "duration": 1.0}
+      ]
+    },
+    {
+      "level_id": 5,
+      "title": "Level 5: Space Beat Blast",
+      "type": "space",
+      "speed": 5.0,
+      "hit_window": 0.350,
+      "enemies": [
+        {"sector": 0, "time": 2.5},
+        {"sector": 1, "time": 4.0},
+        {"sector": 2, "time": 5.5},
+        {"sector": 1, "time": 7.0},
+        {"sector": 0, "time": 8.5},
+        {"sector": 2, "time": 10.0}
+      ]
     }
   ]
 }
