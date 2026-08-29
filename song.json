@@ -2,65 +2,100 @@
   "levels": [
     {
       "level_id": 1,
-      "title": "Level 1: Piano Track (Custom Song)",
       "type": "piano",
-      "speed": 6.0,
-      "hit_window": 0.350,
+      "title": "Piano Lane Dash",
       "song_file": "song.mp3",
+      "speed": 6.0,
+      "hit_window": 0.35,
       "notes": [
+        {"lane": 0, "time": 1.0},
+        {"lane": 1, "time": 1.5},
+        {"lane": 2, "time": 2.0},
+        {"lane": 3, "time": 2.5},
         {"lane": 0, "time": 3.0},
-        {"lane": 1, "time": 4.5},
-        {"lane": 2, "time": 6.0},
-        {"lane": 3, "time": 7.5},
-        {"lane": 1, "time": 9.0},
-        {"lane": 2, "time": 9.0},
-        {"lane": 0, "time": 10.5},
-        {"lane": 3, "time": 12.0}
+        {"lane": 2, "time": 3.5}
       ]
     },
     {
       "level_id": 2,
-      "title": "Level 2: Frog Jump Rhythm",
       "type": "frog",
-      "hit_window": 0.300,
+      "title": "Frog Beat Jump",
       "obstacles": [
-        {"time": 3.0},
-        {"time": 5.0},
-        {"time": 7.0},
-        {"time": 9.0},
-        {"time": 11.0}
+        {"time": 1.5},
+        {"time": 2.8},
+        {"time": 4.0},
+        {"time": 5.2}
       ]
     },
     {
       "level_id": 3,
-      "title": "Level 3: Echo Beat Challenge",
       "type": "echo",
-      "sequence": ["KEY_UP", "KEY_DOWN", "KEY_LEFT", "KEY_RIGHT", "KEY_UP"]
+      "title": "Echo Sequence",
+      "sequence": ["KEY_UP", "KEY_RIGHT", "KEY_DOWN", "KEY_LEFT", "KEY_UP"]
     },
     {
       "level_id": 4,
-      "title": "Level 4: Noodle Slurp Hold",
       "type": "noodle",
-      "hit_window": 0.350,
+      "title": "Noodle Slurp Tempo",
       "noodles": [
-        {"time": 3.0, "duration": 1.5},
-        {"time": 6.0, "duration": 2.0},
-        {"time": 9.5, "duration": 1.0}
+        {"time": 1.0, "duration": 1.5},
+        {"time": 3.2, "duration": 2.0},
+        {"time": 6.0, "duration": 1.2}
       ]
     },
     {
       "level_id": 5,
-      "title": "Level 5: Space Beat Blast",
       "type": "space",
+      "title": "Space Beat Blast",
       "speed": 5.0,
-      "hit_window": 0.350,
+      "hit_window": 0.35,
       "enemies": [
-        {"sector": 0, "time": 2.5},
-        {"sector": 1, "time": 4.0},
-        {"sector": 2, "time": 5.5},
-        {"sector": 1, "time": 7.0},
-        {"sector": 0, "time": 8.5},
-        {"sector": 2, "time": 10.0}
+        {"sector": 0, "time": 1.2},
+        {"sector": 2, "time": 1.8},
+        {"sector": 1, "time": 2.5},
+        {"sector": 0, "time": 3.2},
+        {"sector": 2, "time": 4.0}
+      ]
+    },
+    {
+      "level_id": 6,
+      "type": "drum",
+      "title": "Drum Roll Beat Maker",
+      "bpm": 120,
+      "hit_window": 0.25,
+      "beats": [
+        {"type": "kick", "time": 0.5},
+        {"type": "snare", "time": 1.0},
+        {"type": "kick", "time": 1.5},
+        {"type": "snare", "time": 2.0},
+        {"type": "kick", "time": 2.5},
+        {"type": "snare", "time": 3.0}
+      ]
+    },
+    {
+      "level_id": 7,
+      "type": "chef",
+      "title": "Rhythm Chef Veggie Chop",
+      "hit_window": 0.30,
+      "chops": [
+        {"time": 1.0},
+        {"time": 1.6},
+        {"time": 2.2},
+        {"time": 2.8},
+        {"time": 3.4}
+      ]
+    },
+    {
+      "level_id": 8,
+      "type": "matrix",
+      "title": "Matrix Bullet Dodge",
+      "hit_window": 0.35,
+      "bullets": [
+        {"lane": 0, "time": 1.0},
+        {"lane": 2, "time": 1.6},
+        {"lane": 1, "time": 2.2},
+        {"lane": 3, "time": 2.8},
+        {"lane": 0, "time": 3.4}
       ]
     }
   ]

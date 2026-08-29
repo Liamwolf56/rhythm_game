@@ -32,6 +32,16 @@ def generate_hit_sound(frequency=520, duration=0.06):
     stereo_data = np.repeat(audio_data[:, np.newaxis], 2, axis=1)
     return pygame.sndarray.make_sound(stereo_data)
 
+def generate_noise_sound(duration=0.08):
+    """Generates a noise burst for drum snares/knife chops."""
+    sample_rate = 44100
+    n_samples = int(sample_rate * duration)
+    noise = np.random.uniform(-1, 1, n_samples)
+    envelope = np.exp(-np.linspace(0, duration, n_samples) * 30)
+    audio_data = (noise * envelope * 20000).astype(np.int16)
+    stereo_data = np.repeat(audio_data[:, np.newaxis], 2, axis=1)
+    return pygame.sndarray.make_sound(stereo_data)
+
 try:
     LANE_SOUNDS = [
         generate_hit_sound(440, 0.06),  # D - A4
@@ -39,8 +49,12 @@ try:
         generate_hit_sound(659, 0.06),  # J - E5
         generate_hit_sound(880, 0.06)   # K - A5
     ]
+    CHOP_SOUND = generate_noise_sound(0.05)
+    DRUM_SOUND = generate_noise_sound(0.12)
 except Exception:
     LANE_SOUNDS = [None, None, None, None]
+    CHOP_SOUND = None
+    DRUM_SOUND = None
 
 # --- HIGH SCORE PERSISTENCE ---
 def load_high_scores():
@@ -107,8 +121,6 @@ def play_piano_level(stdscr, level_data):
 
         if key in LANE_KEYS:
             target_lane = KEY_MAP[key]
-            
-            # Play hit sound effect for corresponding lane
             if LANE_SOUNDS[target_lane]:
                 LANE_SOUNDS[target_lane].play()
 
@@ -163,7 +175,6 @@ def play_piano_level(stdscr, level_data):
 
     if audio_active: pygame.mixer.music.stop()
 
-    # Save and display high scores
     is_new_high, best_score = save_high_score(level_data.get("level_id", 1), score)
     stdscr.erase()
     stdscr.addstr(4, 5, f"LEVEL COMPLETE! Score: {score}", curses.A_BOLD)
@@ -380,6 +391,153 @@ def play_space_level(stdscr, level_data):
 
     save_high_score(level_data.get("level_id", 5), score)
 
+# --- LEVEL 6: DRUM ROLL / BEAT MAKER ---
+def play_drum_level(stdscr, level_data):
+    stdscr.nodelay(True)
+    stdscr.timeout(0)
+
+    bpm = level_data.get("bpm", 120)
+    beats = level_data.get("beats", [])
+    hit_window = level_data.get("hit_window", 0.250)
+
+    active_beats = [{"type": b["type"], "time": b["time"], "hit": False} for b in beats]
+    score = 0
+    start_time = time.perf_counter()
+
+    while True:
+        current_time = time.perf_counter() - start_time
+        key = stdscr.getch()
+        if key == 27: break
+
+        if key in [ord(' '), 10, 13]:  # Space or Enter for drum strike
+            if DRUM_SOUND: DRUM_SOUND.play()
+            for b in active_beats:
+                if not b["hit"] and abs(b["time"] - current_time) <= hit_window:
+                    b["hit"] = True
+                    score += 150
+
+        stdscr.erase()
+        stdscr.addstr(1, 2, f"LEVEL 6: DRUM ROLL (BPM: {bpm}) | Strike [SPACE/ENTER] on the Beat!")
+        stdscr.addstr(2, 2, f"Score: {score} | Time: {current_time:.2f}s")
+
+        # Rotating drum visualizer
+        ring_state = int(current_time * 8) % 4
+        frames = ["(  O  )", "( -O- )", "( |O| )", "( /O/ )"]
+        stdscr.addstr(5, 10, f"DRUM KIT: {frames[ring_state]}", curses.A_BOLD)
+
+        # Timeline indicator
+        track_y = 8
+        stdscr.addstr(track_y, 2, "[" + "=" * 50 + "]")
+        marker_x = int(2 + ((current_time % 4.0) / 4.0) * 50)
+        stdscr.addch(track_y, min(51, max(2, marker_x)), 'I', curses.A_REVERSE)
+
+        for b in active_beats:
+            if not b["hit"]:
+                bx = int(2 + ((b["time"] % 4.0) / 4.0) * 50)
+                if 2 <= bx <= 51:
+                    stdscr.addch(track_y - 1, bx, 'v')
+
+        stdscr.refresh()
+        time.sleep(0.01)
+        if active_beats and current_time > (beats[-1]["time"] + 1.5): break
+
+    save_high_score(level_data.get("level_id", 6), score)
+
+# --- LEVEL 7: RHYTHM CHEF ---
+def play_chef_level(stdscr, level_data):
+    stdscr.nodelay(True)
+    stdscr.timeout(0)
+
+    chops = level_data.get("chops", [])
+    hit_window = level_data.get("hit_window", 0.300)
+    active_chops = [{"time": c["time"], "hit": False} for c in chops]
+
+    score = 0
+    last_chop_vis = 0
+    start_time = time.perf_counter()
+
+    while True:
+        current_time = time.perf_counter() - start_time
+        key = stdscr.getch()
+        if key == 27: break
+
+        if key in [ord('c'), ord('C'), ord(' ')]:
+            last_chop_vis = current_time
+            if CHOP_SOUND: CHOP_SOUND.play()
+
+            for c in active_chops:
+                if not c["hit"] and abs(c["time"] - current_time) <= hit_window:
+                    c["hit"] = True
+                    score += 120
+
+        stdscr.erase()
+        stdscr.addstr(1, 2, "LEVEL 7: RHYTHM CHEF | Press 'C' or SPACE to Slice Veggies on Beat!")
+        stdscr.addstr(2, 2, f"Score: {score} | Time: {current_time:.2f}s")
+
+        knife_char = " | " if (current_time - last_chop_vis) > 0.1 else "\\|/"
+        stdscr.addstr(5, 12, f" Knife: {knife_char}")
+        stdscr.addstr(6, 4, "[BOARD] === (🥕) === (🧅) === (🍄) ===")
+
+        for c in active_chops:
+            if not c["hit"]:
+                dx = int(35 - ((c["time"] - current_time) * 12))
+                if 4 <= dx <= 50:
+                    stdscr.addstr(7, dx, "^")
+
+        stdscr.refresh()
+        time.sleep(0.01)
+        if active_chops and current_time > (chops[-1]["time"] + 1.5): break
+
+    save_high_score(level_data.get("level_id", 7), score)
+
+# --- LEVEL 8: MATRIX BULLET TIME ---
+def play_matrix_level(stdscr, level_data):
+    stdscr.nodelay(True)
+    stdscr.timeout(0)
+
+    bullets = level_data.get("bullets", [])
+    hit_window = level_data.get("hit_window", 0.350)
+    active_bullets = [{"lane": b["lane"], "time": b["time"], "dodged": False} for b in bullets]
+
+    score = 0
+    start_time = time.perf_counter()
+
+    while True:
+        current_time = time.perf_counter() - start_time
+        key = stdscr.getch()
+        if key == 27: break
+
+        if key in LANE_KEYS:
+            lane = KEY_MAP[key]
+            if LANE_SOUNDS[lane]: LANE_SOUNDS[lane].play()
+
+            for b in active_bullets:
+                if b["lane"] == lane and not b["dodged"]:
+                    if abs(b["time"] - current_time) <= hit_window:
+                        b["dodged"] = True
+                        score += 250
+
+        stdscr.erase()
+        stdscr.addstr(1, 2, "LEVEL 8: MATRIX BULLET DODGE | Press D, F, J, or K to Dodge Incoming Bullets!")
+        stdscr.addstr(2, 2, f"Score: {score} | Time: {current_time:.2f}s")
+
+        for i, l in enumerate(LANES):
+            stdscr.addstr(4, 6 + (i * 10), f"[{l}]")
+
+        for b in active_bullets:
+            if not b["dodged"]:
+                y_pos = int(18 - ((b["time"] - current_time) * 8))
+                if 5 <= y_pos <= 18:
+                    stdscr.addstr(y_pos, 6 + (b["lane"] * 10), "║|║", curses.A_BOLD)
+
+        stdscr.addstr(18, 2, "DODGE ZONE =========================================")
+
+        stdscr.refresh()
+        time.sleep(0.01)
+        if active_bullets and current_time > (bullets[-1]["time"] + 1.5): break
+
+    save_high_score(level_data.get("level_id", 8), score)
+
 # --- MENU ROUTER ---
 def main(stdscr):
     curses.curs_set(0)
@@ -394,7 +552,7 @@ def main(stdscr):
         stdscr.nodelay(False)
         stdscr.erase()
         stdscr.addstr(1, 2, "==========================================================", curses.A_BOLD)
-        stdscr.addstr(2, 2, "           5-LEVEL RHYTHM MINI-GAME ENGINE                ", curses.A_BOLD)
+        stdscr.addstr(2, 2, "           8-LEVEL RHYTHM MINI-GAME ENGINE                ", curses.A_BOLD)
         stdscr.addstr(3, 2, "==========================================================", curses.A_BOLD)
 
         for i, lvl in enumerate(levels):
@@ -403,12 +561,12 @@ def main(stdscr):
             title = lvl.get('title', 'Untitled')
             stdscr.addstr(5 + i, 4, f"{i + 1}. {title:<36} | High Score: {best}")
 
-        stdscr.addstr(13, 2, "Press 1-5 to play. Press 'Q' to quit.")
+        stdscr.addstr(15, 2, "Press 1-8 to play. Press 'Q' to quit.")
         stdscr.refresh()
 
         key = stdscr.getch()
         if key in [ord('q'), ord('Q'), 27]: break
-        elif key in [ord('1'), ord('2'), ord('3'), ord('4'), ord('5')]:
+        elif key in [ord(str(n)) for n in range(1, 9)]:
             idx = int(chr(key)) - 1
             if idx < len(levels):
                 lvl = levels[idx]
@@ -419,6 +577,9 @@ def main(stdscr):
                 elif g_type == "echo": play_echo_level(stdscr, lvl)
                 elif g_type == "noodle": play_noodle_level(stdscr, lvl)
                 elif g_type == "space": play_space_level(stdscr, lvl)
+                elif g_type == "drum": play_drum_level(stdscr, lvl)
+                elif g_type == "chef": play_chef_level(stdscr, lvl)
+                elif g_type == "matrix": play_matrix_level(stdscr, lvl)
 
 if __name__ == "__main__":
     curses.wrapper(main)
