@@ -6,7 +6,7 @@ import sys
 import time
 
 os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = '1'
-os.environ['SDL_AUDIODRIVER'] = 'dummy'
+# os.environ['SDL_AUDIODRIVER'] = 'dummy'
 
 import pygame
 import numpy as np
