@@ -89,11 +89,28 @@ except Exception:
     LANE_SOUNDS = [None, None, None, None]
     CHOP_SOUND, DRUM_SOUND = None, None
 
+import sys
+
 def play_point_rhythm(toggle_counter):
+    played = False
     if toggle_counter % 2 == 0:
-        if DEEP_SOUND: DEEP_SOUND.play()
+        if DEEP_SOUND:
+            try:
+                DEEP_SOUND.play()
+                played = True
+            except Exception: pass
     else:
-        if DOOP_SOUND: DOOP_SOUND.play()
+        if DOOP_SOUND:
+            try:
+                DOOP_SOUND.play()
+                played = True
+            except Exception: pass
+            
+    # Fallback for WSL terminal audio output
+    if not AUDIO_AVAILABLE or not played:
+        sys.stdout.write('')
+        sys.stdout.flush()
+
 
 # --- HIGH SCORE PERSISTENCE ---
 def load_high_scores():
