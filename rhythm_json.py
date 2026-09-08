@@ -2,6 +2,7 @@ import curses
 import json
 import os
 import random
+import sys
 import time
 
 os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = '1'
@@ -10,7 +11,7 @@ os.environ['SDL_AUDIODRIVER'] = 'dummy'
 import pygame
 import numpy as np
 
-# --- SAFE AUDIO INITIALIZATION ---
+# --- AUDIO INITIALIZATION ---
 AUDIO_AVAILABLE = False
 try:
     pygame.mixer.init(frequency=44100, size=-16, channels=2, buffer=512)
@@ -29,7 +30,7 @@ KEY_MAP = {
 
 HIGH_SCORE_FILE = "high_scores.json"
 
-# --- DEEP / DOOP SYNTHESIZER ---
+# --- SOUND GENERATORS ---
 def generate_point_chime(pitch="deep", duration=0.04):
     if not AUDIO_AVAILABLE: return None
     try:
@@ -46,71 +47,31 @@ def generate_point_chime(pitch="deep", duration=0.04):
     except Exception:
         return None
 
-def generate_hit_sound(frequency=520, duration=0.06):
-    if not AUDIO_AVAILABLE: return None
-    try:
-        sample_rate = 44100
-        n_samples = int(sample_rate * duration)
-        t = np.linspace(0, duration, n_samples, False)
-        wave = np.sin(2 * np.pi * frequency * t)
-        envelope = np.exp(-t * 35)
-        audio_data = (wave * envelope * 32767).astype(np.int16)
-        stereo_data = np.repeat(audio_data[:, np.newaxis], 2, axis=1)
-        return pygame.sndarray.make_sound(stereo_data)
-    except Exception:
-        return None
-
-def generate_noise_sound(duration=0.08):
-    if not AUDIO_AVAILABLE: return None
-    try:
-        sample_rate = 44100
-        n_samples = int(sample_rate * duration)
-        noise = np.random.uniform(-1, 1, n_samples)
-        envelope = np.exp(-np.linspace(0, duration, n_samples) * 30)
-        audio_data = (noise * envelope * 20000).astype(np.int16)
-        stereo_data = np.repeat(audio_data[:, np.newaxis], 2, axis=1)
-        return pygame.sndarray.make_sound(stereo_data)
-    except Exception:
-        return None
-
 try:
     DEEP_SOUND = generate_point_chime("deep")
     DOOP_SOUND = generate_point_chime("doop")
-    LANE_SOUNDS = [
-        generate_hit_sound(440, 0.06),
-        generate_hit_sound(554, 0.06),
-        generate_hit_sound(659, 0.06),
-        generate_hit_sound(880, 0.06)
-    ]
-    CHOP_SOUND = generate_noise_sound(0.05)
-    DRUM_SOUND = generate_noise_sound(0.12)
 except Exception:
     DEEP_SOUND, DOOP_SOUND = None, None
-    LANE_SOUNDS = [None, None, None, None]
-    CHOP_SOUND, DRUM_SOUND = None, None
-
-import sys
 
 def play_point_rhythm(toggle_counter):
-    played = False
+    sound_played = False
     if toggle_counter % 2 == 0:
         if DEEP_SOUND:
             try:
                 DEEP_SOUND.play()
-                played = True
+                sound_played = True
             except Exception: pass
     else:
         if DOOP_SOUND:
             try:
                 DOOP_SOUND.play()
-                played = True
+                sound_played = True
             except Exception: pass
             
-    # Fallback for WSL terminal audio output
-    if not AUDIO_AVAILABLE or not played:
-        sys.stdout.write('')
+    # Universal fallback for WSL environments
+    if not AUDIO_AVAILABLE or not sound_played:
+        sys.stdout.write('\a')
         sys.stdout.flush()
-
 
 # --- HIGH SCORE PERSISTENCE ---
 def load_high_scores():
@@ -132,7 +93,6 @@ def save_high_score(level_id, score):
         return True, score
     return False, current_high
 
-# --- LEVEL TRANSITION OVERLAY ---
 def show_transition(stdscr, level_data, score):
     is_new_high, best_score = save_high_score(level_data.get("level_id", 1), score)
     stdscr.nodelay(False)
@@ -145,7 +105,7 @@ def show_transition(stdscr, level_data, score):
     else:
         stdscr.addstr(7, 5, f" Personal Best: {best_score}")
 
-    stdscr.addstr(10, 5, "Next continuous random level loading in 2s...", curses.A_DIM)
+    stdscr.addstr(10, 5, "Next continuous random level loading...", curses.A_DIM)
     stdscr.addstr(11, 5, "Press 'Q' or ESC to return to Menu.")
     stdscr.refresh()
 
@@ -664,8 +624,6 @@ def run_level(stdscr, level_data):
 # --- INFINITE RANDOM SHUFFLE RUNNER ---
 def start_random_endless_mode(stdscr, levels):
     if not levels: return
-    
-    # Outer infinite loop ensures it never exits back to menu automatically
     while True:
         playlist = list(levels)
         random.shuffle(playlist)
@@ -675,7 +633,7 @@ def start_random_endless_mode(stdscr, levels):
             if not continue_game:
                 return
 
-# --- MENU ROUTER ---
+# --- MAIN MENU ---
 def main(stdscr):
     curses.curs_set(0)
 
@@ -689,11 +647,8 @@ def main(stdscr):
         stdscr.nodelay(False)
         stdscr.erase()
         stdscr.addstr(1, 2, "==========================================================", curses.A_BOLD)
-        stdscr.addstr(2, 2, "     INFINITE SHUFFLE RHYTHM ENGINE (DEEP/DOOP AUDIO)     ", curses.A_BOLD)
+        stdscr.addstr(2, 2, "     INFINITE SHUFFLE RHYTHM ENGINE (UNIVERSAL AUDIO)     ", curses.A_BOLD)
         stdscr.addstr(3, 2, "==========================================================", curses.A_BOLD)
-
-        audio_status = "ACTIVE" if AUDIO_AVAILABLE else "DISABLED (WSL Fallback)"
-        stdscr.addstr(4, 2, f"Audio Driver Status: {audio_status}", curses.A_DIM)
 
         stdscr.addstr(6, 4, "[R] PLAY INFINITE RANDOM MODE (Endless Progression)", curses.A_BOLD | curses.A_REVERSE)
 
