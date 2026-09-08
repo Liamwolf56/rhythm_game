@@ -6,18 +6,21 @@ import sys
 import time
 
 os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = '1'
-# os.environ['SDL_AUDIODRIVER'] = 'dummy'
 
 import pygame
 import numpy as np
 
 # --- AUDIO INITIALIZATION ---
 AUDIO_AVAILABLE = False
-try:
-    pygame.mixer.init(frequency=44100, size=-16, channels=2, buffer=512)
-    AUDIO_AVAILABLE = True
-except Exception:
-    AUDIO_AVAILABLE = False
+for driver in ['alsa', 'pulse', 'dsp', 'dummy']:
+    try:
+        os.environ['SDL_AUDIODRIVER'] = driver
+        pygame.mixer.init(frequency=44100, size=-16, channels=2, buffer=512)
+        if driver != 'dummy':
+            AUDIO_AVAILABLE = True
+        break
+    except Exception:
+        continue
 
 LANES = ['D', 'F', 'J', 'K']
 LANE_KEYS = [ord('d'), ord('f'), ord('j'), ord('k'), ord('D'), ord('F'), ord('J'), ord('K')]
@@ -31,17 +34,15 @@ KEY_MAP = {
 HIGH_SCORE_FILE = "high_scores.json"
 
 # --- SOUND GENERATORS ---
-def generate_point_chime(pitch="deep", duration=0.04):
-    if not AUDIO_AVAILABLE: return None
+def generate_point_chime(pitch="deep", duration=0.05):
     try:
         sample_rate = 44100
         n_samples = int(sample_rate * duration)
         t = np.linspace(0, duration, n_samples, False)
-        
-        freq = 220 if pitch == "deep" else 440
+        freq = 180 if pitch == "deep" else 360
         wave = np.sin(2 * np.pi * freq * t)
-        envelope = np.exp(-t * 40)
-        audio_data = (wave * envelope * 24000).astype(np.int16)
+        envelope = np.exp(-t * 30)
+        audio_data = (wave * envelope * 28000).astype(np.int16)
         stereo_data = np.repeat(audio_data[:, np.newaxis], 2, axis=1)
         return pygame.sndarray.make_sound(stereo_data)
     except Exception:
@@ -67,11 +68,10 @@ def play_point_rhythm(toggle_counter):
                 DOOP_SOUND.play()
                 sound_played = True
             except Exception: pass
-            
-    # Universal fallback for WSL environments
-    if not AUDIO_AVAILABLE or not sound_played:
-        sys.stdout.write('\a')
-        sys.stdout.flush()
+
+    # Always trigger stdout bell signal as fallback for terminal audio
+    sys.stdout.write('\a')
+    sys.stdout.flush()
 
 # --- HIGH SCORE PERSISTENCE ---
 def load_high_scores():
@@ -93,7 +93,7 @@ def save_high_score(level_id, score):
         return True, score
     return False, current_high
 
-def show_transition(stdscr, level_data, score):
+def show_transition(stdscr, level_data, score, current_step=None, total_steps=None):
     is_new_high, best_score = save_high_score(level_data.get("level_id", 1), score)
     stdscr.nodelay(False)
     stdscr.erase()
@@ -105,35 +105,28 @@ def show_transition(stdscr, level_data, score):
     else:
         stdscr.addstr(7, 5, f" Personal Best: {best_score}")
 
-    stdscr.addstr(10, 5, "Next continuous random level loading...", curses.A_DIM)
-    stdscr.addstr(11, 5, "Press 'Q' or ESC to return to Menu.")
+    if current_step is not None and total_steps is not None:
+        stdscr.addstr(9, 5, f" Progress: Level {current_step} of {total_steps} Complete", curses.A_BOLD)
+
+    stdscr.addstr(11, 5, "Next level loading...", curses.A_DIM)
+    stdscr.addstr(12, 5, "Press 'Q' or ESC to return to Menu.")
     stdscr.refresh()
 
-    stdscr.timeout(1800)
+    stdscr.timeout(1500)
     key = stdscr.getch()
     stdscr.timeout(-1)
     if key in [27, ord('q'), ord('Q')]:
         return False
     return True
 
-# --- LEVEL 1: PIANO TRACK ---
-def play_piano_level(stdscr, level_data):
+# --- MINIGAME LEVEL HANDLERS ---
+def play_piano_level(stdscr, level_data, step=None, total=None):
     stdscr.nodelay(True)
     stdscr.timeout(0)
-
     song_file = level_data.get("song_file", "song.mp3")
     notes = level_data.get("notes", [])
     speed = level_data.get("speed", 6.0)
     hit_window = level_data.get("hit_window", 0.350)
-
-    audio_active = False
-    if AUDIO_AVAILABLE and os.path.exists(song_file):
-        try:
-            pygame.mixer.music.load(song_file)
-            pygame.mixer.music.set_volume(0.8)
-            audio_active = True
-        except Exception:
-            audio_active = False
 
     score, combo, feedback, feedback_time = 0, 0, "", 0
     hit_count = 0
@@ -143,22 +136,13 @@ def play_piano_level(stdscr, level_data):
         stdscr.erase()
         stdscr.addstr(5, 10, f"NEXT UP: {level_data.get('title')} - Starting in {c}...", curses.A_BOLD)
         stdscr.refresh()
-        time.sleep(0.6)
+        time.sleep(0.5)
 
     start_time = time.perf_counter()
-    if audio_active:
-        try: pygame.mixer.music.play()
-        except Exception: audio_active = False
-
     user_quit = False
-    while True:
-        if audio_active and pygame.mixer.music.get_busy():
-            current_time = pygame.mixer.music.get_pos() / 1000.0
-            if current_time < 0:
-                current_time = time.perf_counter() - start_time
-        else:
-            current_time = time.perf_counter() - start_time
 
+    while True:
+        current_time = time.perf_counter() - start_time
         key = stdscr.getch()
         if key == 27:
             user_quit = True
@@ -217,14 +201,10 @@ def play_piano_level(stdscr, level_data):
         if all(n["hit"] or n["missed"] for n in active_notes) and (current_time > (notes[-1]["time"] + 1.0 if notes else 5.0)):
             break
 
-    if audio_active:
-        try: pygame.mixer.music.stop()
-        except Exception: pass
     if user_quit: return False
-    return show_transition(stdscr, level_data, score)
+    return show_transition(stdscr, level_data, score, step, total)
 
-# --- LEVEL 2: FROG JUMP ---
-def play_frog_level(stdscr, level_data):
+def play_frog_level(stdscr, level_data, step=None, total=None):
     stdscr.nodelay(True)
     stdscr.timeout(0)
     obstacles = level_data.get("obstacles", [])
@@ -268,10 +248,9 @@ def play_frog_level(stdscr, level_data):
         if obstacles and current_time > (obstacles[-1]["time"] + 2.0): break
 
     if user_quit: return False
-    return show_transition(stdscr, level_data, score)
+    return show_transition(stdscr, level_data, score, step, total)
 
-# --- LEVEL 3: ECHO BEAT ---
-def play_echo_level(stdscr, level_data):
+def play_echo_level(stdscr, level_data, step=None, total=None):
     sequence = level_data.get("sequence", ["KEY_UP", "KEY_DOWN", "KEY_LEFT", "KEY_RIGHT"])
     key_dict = {curses.KEY_UP: "KEY_UP", curses.KEY_DOWN: "KEY_DOWN", curses.KEY_LEFT: "KEY_LEFT", curses.KEY_RIGHT: "KEY_RIGHT"}
     stdscr.nodelay(False)
@@ -279,12 +258,12 @@ def play_echo_level(stdscr, level_data):
     stdscr.erase()
     stdscr.addstr(1, 2, f"LEVEL 3: {level_data.get('title')} - Watch sequence:")
     stdscr.refresh()
-    time.sleep(0.6)
+    time.sleep(0.5)
 
     for arrow in sequence:
         stdscr.addstr(5, 5, f"--> {arrow} <--   ", curses.A_BOLD | curses.A_REVERSE)
         stdscr.refresh()
-        time.sleep(0.4)
+        time.sleep(0.35)
         stdscr.addstr(5, 5, " " * 30)
         stdscr.refresh()
         time.sleep(0.15)
@@ -310,17 +289,13 @@ def play_echo_level(stdscr, level_data):
 
     if user_quit: return False
     score = 500 if user_seq == sequence else 0
-    return show_transition(stdscr, level_data, score)
+    return show_transition(stdscr, level_data, score, step, total)
 
-# --- LEVEL 4: NOODLE SLURP ---
-def play_noodle_level(stdscr, level_data):
+def play_noodle_level(stdscr, level_data, step=None, total=None):
     stdscr.nodelay(True)
     stdscr.timeout(0)
     noodles = level_data.get("noodles", [])
-
-    score = 0
-    hit_count = 0
-    feedback = ""
+    score, hit_count, feedback = 0, 0, ""
     start_time = time.perf_counter()
     user_quit = False
 
@@ -364,29 +339,22 @@ def play_noodle_level(stdscr, level_data):
                 for x in range(max(2, head_x), min(60, tail_x)):
                     if x != mouth_x: stdscr.addch(mouth_y, x, '~')
 
-        if not actively_slurping and is_holding_space:
-            feedback = "DONT CHEW AIR!"
-
         stdscr.refresh()
         time.sleep(0.015)
         if noodles and current_time > (noodles[-1]["time"] + noodles[-1]["duration"] + 1.5): break
 
     if user_quit: return False
-    return show_transition(stdscr, level_data, score)
+    return show_transition(stdscr, level_data, score, step, total)
 
-# --- LEVEL 5: SPACE BEAT BLAST ---
-def play_space_level(stdscr, level_data):
+def play_space_level(stdscr, level_data, step=None, total=None):
     stdscr.nodelay(True)
     stdscr.timeout(0)
-
     enemies = level_data.get("enemies", [])
     speed = level_data.get("speed", 5.0)
     hit_window = level_data.get("hit_window", 0.350)
     active_enemies = [{"sector": e["sector"], "time": e["time"], "destroyed": False} for e in enemies]
 
-    score = 0
-    hit_count = 0
-    lasers = []
+    score, hit_count, lasers = 0, 0, []
     start_time = time.perf_counter()
     user_quit = False
 
@@ -444,20 +412,17 @@ def play_space_level(stdscr, level_data):
         if active_enemies and current_time > (enemies[-1]["time"] + 2.0): break
 
     if user_quit: return False
-    return show_transition(stdscr, level_data, score)
+    return show_transition(stdscr, level_data, score, step, total)
 
-# --- LEVEL 6: DRUM ROLL ---
-def play_drum_level(stdscr, level_data):
+def play_drum_level(stdscr, level_data, step=None, total=None):
     stdscr.nodelay(True)
     stdscr.timeout(0)
-
     bpm = level_data.get("bpm", 120)
     beats = level_data.get("beats", [])
     hit_window = level_data.get("hit_window", 0.250)
 
     active_beats = [{"type": b["type"], "time": b["time"], "hit": False} for b in beats]
-    score = 0
-    hit_count = 0
+    score, hit_count = 0, 0
     start_time = time.perf_counter()
     user_quit = False
 
@@ -500,20 +465,16 @@ def play_drum_level(stdscr, level_data):
         if active_beats and current_time > (beats[-1]["time"] + 1.5): break
 
     if user_quit: return False
-    return show_transition(stdscr, level_data, score)
+    return show_transition(stdscr, level_data, score, step, total)
 
-# --- LEVEL 7: RHYTHM CHEF ---
-def play_chef_level(stdscr, level_data):
+def play_chef_level(stdscr, level_data, step=None, total=None):
     stdscr.nodelay(True)
     stdscr.timeout(0)
-
     chops = level_data.get("chops", [])
     hit_window = level_data.get("hit_window", 0.300)
     active_chops = [{"time": c["time"], "hit": False} for c in chops]
 
-    score = 0
-    hit_count = 0
-    last_chop_vis = 0
+    score, hit_count, last_chop_vis = 0, 0, 0
     start_time = time.perf_counter()
     user_quit = False
 
@@ -526,7 +487,6 @@ def play_chef_level(stdscr, level_data):
 
         if key in [ord('c'), ord('C'), ord(' ')]:
             last_chop_vis = current_time
-
             for c in active_chops:
                 if not c["hit"] and abs(c["time"] - current_time) <= hit_window:
                     c["hit"] = True
@@ -553,19 +513,16 @@ def play_chef_level(stdscr, level_data):
         if active_chops and current_time > (chops[-1]["time"] + 1.5): break
 
     if user_quit: return False
-    return show_transition(stdscr, level_data, score)
+    return show_transition(stdscr, level_data, score, step, total)
 
-# --- LEVEL 8: MATRIX BULLET TIME ---
-def play_matrix_level(stdscr, level_data):
+def play_matrix_level(stdscr, level_data, step=None, total=None):
     stdscr.nodelay(True)
     stdscr.timeout(0)
-
     bullets = level_data.get("bullets", [])
     hit_window = level_data.get("hit_window", 0.350)
     active_bullets = [{"lane": b["lane"], "time": b["time"], "dodged": False} for b in bullets]
 
-    score = 0
-    hit_count = 0
+    score, hit_count = 0, 0
     start_time = time.perf_counter()
     user_quit = False
 
@@ -606,32 +563,33 @@ def play_matrix_level(stdscr, level_data):
         if active_bullets and current_time > (bullets[-1]["time"] + 1.5): break
 
     if user_quit: return False
-    return show_transition(stdscr, level_data, score)
+    return show_transition(stdscr, level_data, score, step, total)
 
 # --- LEVEL DISPATCHER ---
-def run_level(stdscr, level_data):
+def run_level(stdscr, level_data, step=None, total=None):
     g_type = level_data.get("type", "piano")
-    if g_type == "piano": return play_piano_level(stdscr, level_data)
-    elif g_type == "frog": return play_frog_level(stdscr, level_data)
-    elif g_type == "echo": return play_echo_level(stdscr, level_data)
-    elif g_type == "noodle": return play_noodle_level(stdscr, level_data)
-    elif g_type == "space": return play_space_level(stdscr, level_data)
-    elif g_type == "drum": return play_drum_level(stdscr, level_data)
-    elif g_type == "chef": return play_chef_level(stdscr, level_data)
-    elif g_type == "matrix": return play_matrix_level(stdscr, level_data)
+    if g_type == "piano": return play_piano_level(stdscr, level_data, step, total)
+    elif g_type == "frog": return play_frog_level(stdscr, level_data, step, total)
+    elif g_type == "echo": return play_echo_level(stdscr, level_data, step, total)
+    elif g_type == "noodle": return play_noodle_level(stdscr, level_data, step, total)
+    elif g_type == "space": return play_space_level(stdscr, level_data, step, total)
+    elif g_type == "drum": return play_drum_level(stdscr, level_data, step, total)
+    elif g_type == "chef": return play_chef_level(stdscr, level_data, step, total)
+    elif g_type == "matrix": return play_matrix_level(stdscr, level_data, step, total)
     return True
 
-# --- INFINITE RANDOM SHUFFLE RUNNER ---
-def start_random_endless_mode(stdscr, levels):
+# --- EXACT 8-LEVEL RANDOM SHUFFLE MODE ---
+def start_random_mode(stdscr, levels):
     if not levels: return
-    while True:
-        playlist = list(levels)
-        random.shuffle(playlist)
+    # Shuffle all available levels exactly once
+    playlist = list(levels[:8])
+    random.shuffle(playlist)
+    total_levels = len(playlist)
 
-        for lvl in playlist:
-            continue_game = run_level(stdscr, lvl)
-            if not continue_game:
-                return
+    for idx, lvl in enumerate(playlist, start=1):
+        continue_game = run_level(stdscr, lvl, step=idx, total=total_levels)
+        if not continue_game:
+            break
 
 # --- MAIN MENU ---
 def main(stdscr):
@@ -647,25 +605,25 @@ def main(stdscr):
         stdscr.nodelay(False)
         stdscr.erase()
         stdscr.addstr(1, 2, "==========================================================", curses.A_BOLD)
-        stdscr.addstr(2, 2, "     INFINITE SHUFFLE RHYTHM ENGINE (UNIVERSAL AUDIO)     ", curses.A_BOLD)
+        stdscr.addstr(2, 2, "         RHYTHM GAME ENGINE (8 RANDOM LEVEL MODE)        ", curses.A_BOLD)
         stdscr.addstr(3, 2, "==========================================================", curses.A_BOLD)
 
-        stdscr.addstr(6, 4, "[R] PLAY INFINITE RANDOM MODE (Endless Progression)", curses.A_BOLD | curses.A_REVERSE)
+        stdscr.addstr(6, 4, "[R] PLAY 8 RANDOM LEVELS (Single Pass)", curses.A_BOLD | curses.A_REVERSE)
 
-        stdscr.addstr(8, 2, "--- Or Practice Individual Levels ---", curses.A_DIM)
-        for i, lvl in enumerate(levels):
+        stdscr.addstr(8, 2, "--- Practice Individual Levels ---", curses.A_DIM)
+        for i, lvl in enumerate(levels[:8]):
             lvl_id = str(lvl.get("level_id", i + 1))
             best = high_scores.get(lvl_id, 0)
             title = lvl.get('title', 'Untitled')
             stdscr.addstr(10 + i, 4, f"{i + 1}. {title:<36} | High Score: {best}")
 
-        stdscr.addstr(19, 2, "Press 'R' for Infinite Arcade, 1-8 for Practice, or 'Q' to Quit.")
+        stdscr.addstr(19, 2, "Press 'R' for Random Mode, 1-8 for Practice, or 'Q' to Quit.")
         stdscr.refresh()
 
         key = stdscr.getch()
         if key in [ord('q'), ord('Q'), 27]: break
         elif key in [ord('r'), ord('R')]:
-            start_random_endless_mode(stdscr, levels)
+            start_random_mode(stdscr, levels)
         elif key in [ord(str(n)) for n in range(1, 9)]:
             idx = int(chr(key)) - 1
             if idx < len(levels):
