@@ -1,65 +1,49 @@
-# 8-Level Terminal Rhythm Engine
+# Python Rhythm & Arcade Engine
 
-A lightweight, multi-mode terminal rhythm game engine built in Python using `curses`, `pygame.mixer`, and `numpy`. Designed to run seamlessly in Linux environments, including **WSL (Windows Subsystem for Linux)**.
-
-Featuring 8 unique rhythm mini-game mechanics, procedural audio synthesis with zero external MP3 dependencies required for hit feedback, high score tracking, and flexible JSON level configuration.
+A terminal-based, multi-minigame rhythm engine built with **Python**, **Curses**, and **Pygame**. Features 8 distinct rhythm/arcade game modes, custom audio synthesized via **NumPy**, custom player profile history, and continuous scoring across randomized 8-level runs.
 
 ---
 
-## Features
+## Key Features
 
-- **8 Distinct Rhythm Modes:**
-  1. **Piano Lane Dash:** Classic 4-lane scrolling note drop (`D`, `F`, `J`, `K`).
-  2. **Frog Beat Jump:** Obstacle dodge timing game using `SPACE`.
-  3. **Echo Sequence:** Memory-based pattern repeating using Arrow Keys.
-  4. **Noodle Slurp Tempo:** Hold-note duration gauge mechanic using `SPACE`.
-  5. **Space Beat Blast:** 3-sector targeting defense using `1`, `2`, `3`.
-  6. **Drum Roll Beat Maker:** BPM-synced metronome hit timing using `SPACE`/`ENTER`.
-  7. **Rhythm Chef Veggie Chop:** Rapid-fire cooking slash precision using `C` or `SPACE`.
-  8. **Matrix Bullet Dodge:** Dynamic lane bullet weaving using `D`, `F`, `J`, `K`.
-- **Procedural Sound Engine:** Low-latency hit feedback generated dynamically in memory using `numpy` sine wave and noise burst audio synthesis.
-- **Persistent High Scores:** Local score persistence per level stored in `high_scores.json`.
-- **JSON Level Customization:** Easy level creation, speed adjustment, and note mapping via `song.json`.
+* **Multi-Player Profiles & History:** Input player names before each run to track total scores across matches in `player_scores.json`.
+* **8-Level Randomized Campaign:** Automatically shuffles and plays through all 8 distinct mini-game levels, accumulating a total score across the entire run.
+* **Global & Player Scoreboards:** View top player run totals or search match logs for specific player names.
+* **8 Arcade Mini-Game Types:**
+  1. **Piano Roll:** 4-lane falling notes (`D`, `F`, `J`, `K`).
+  2. **Frog Jump:** Obstacle jumper timing (`SPACE`).
+  3. **Echo Pattern:** Memory-sequence rhythm repetition (Arrow Keys).
+  4. **Noodle Slurp:** Hold-down sustain note timing (`SPACE`).
+  5. **Space Shooter:** Multi-sector target clearing (`1`, `2`, `3`).
+  6. **Drum Kit:** On-beat ring timing (`SPACE` / `ENTER`).
+  7. **Chef Slice:** Precision chopping rhythm (`C` / `SPACE`).
+  8. **Matrix Dodge:** Fast-reaction bullet dodging (`D`, `F`, `J`, `K`).
+* **Dynamic Audio Engine:** Real-time pulse sound effects synthesized using `pygame.mixer` and `numpy`.
 
 ---
 
-## Prerequisites & Installation
+## Quick Start
 
-### 1. System Dependencies (WSL / Ubuntu)
+### 1. Prerequisites & Dependencies
 
-Ensure system Python and audio drivers are available:
+Ensure you have Python 3 and the required libraries installed:
 
 ```bash
-sudo apt update
-sudo apt install -y python3 python3-pip libsdl2-mixer-2.0-0
-2. Python PackagesInstall required dependencies:Bashpip install pygame numpy
-Quick StartClone the Repository:Bashgit clone [https://github.com/Liamwolf56/rhythm_game.git](https://github.com/Liamwolf56/rhythm_game.git)
-cd rhythm_game
-Run the Game Engine:Bashpython3 rhythm_json.py
-ControlsMode / ScreenActionKey BindsMain MenuSelect Level1 - 8Main MenuQuit GameQ or ESCLanes (Piano / Matrix)Hit / Dodge LanesD, F, J, KSpace BlastFire Sector Lasers1, 2, 3Echo BeatFollow SequenceUp, Down, Left, RightChef / Drum / FrogAction / Chop / JumpSPACE, ENTER, CLevel Configuration (song.json)Levels are defined dynamically inside song.json. You can extend level durations, adjust hit windows, or add new levels by altering the structure:JSON{
-  "level_id": 1,
-  "type": "piano",
-  "title": "Piano Lane Dash",
-  "speed": 6.0,
-  "hit_window": 0.35,
-  "notes": [
-    {"lane": 0, "time": 1.0},
-    {"lane": 1, "time": 1.4}
-  ]
-}
-Project StructurePlaintextrhythm_game/
-├── rhythm_json.py     # Main engine, game loops & audio synthesizer
-├── song.json          # Level data configurations & timings
-├── high_scores.json   # Persistent score tracking (generated)
-└── README.md          # Project documentation
+pip install pygame numpy
+2. Run the GameExecute the main application script:Bashpython3 rhythm_json.py
+ControlsGame ModeKey BindingsMain Menu Navigation1 (New Game), 2 (Old Games/Board), 3 or Q (Exit)Piano Roll / Matrix DodgeD, F, J, KFrog Jump / Drum KitSPACE or ENTEREcho PatternUp, Down, Left, Right Arrow KeysNoodle SlurpHold SPACESpace Shooter1, 2, 3Chef SliceC or SPACEData Structure & Configurationsong.json: Controls level layouts, speed, notes, and individual game-mode parameters.player_scores.json: Automatically manages player profile names, personal high scores, and individual match history logs.high_scores.json: Tracks historical single-level scores.Project StructurePlaintextrhythm_game/
+├── rhythm_json.py        # Main curses application & menu logic
+├── song.json             # Level definitions and note configurations
+├── player_scores.json    # Saved player runs and score history
+└── README.md             # Project documentation
 
 ---
 
-### Step 2: Push to GitHub
+### Push Changes to GitHub
 
-Run this command in your WSL terminal to write and commit the README directly:
+Once you've pasted this into `README.md`, commit and push with:
 
 ```bash
 git add README.md
-git commit -m "Add documentation for 8-level rhythm engine"
+git commit -m "Update README with player profile features and main menu controls"
 git push origin main
