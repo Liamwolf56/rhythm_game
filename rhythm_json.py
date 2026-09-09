@@ -32,6 +32,7 @@ KEY_MAP = {
 }
 
 HIGH_SCORE_FILE = "high_scores.json"
+PLAYER_SCORES_FILE = "player_scores.json"
 
 # --- SOUND GENERATORS ---
 def generate_point_chime(pitch="deep", duration=0.05):
@@ -69,44 +70,48 @@ def play_point_rhythm(toggle_counter):
                 sound_played = True
             except Exception: pass
 
-    # Always trigger stdout bell signal as fallback for terminal audio
     sys.stdout.write('\a')
     sys.stdout.flush()
 
-# --- HIGH SCORE PERSISTENCE ---
-def load_high_scores():
-    if os.path.exists(HIGH_SCORE_FILE):
+# --- HIGH SCORE & PLAYER PERSISTENCE ---
+def load_json(filename):
+    if os.path.exists(filename):
         try:
-            with open(HIGH_SCORE_FILE, "r") as f:
+            with open(filename, "r") as f:
                 return json.load(f)
         except Exception:
             return {}
     return {}
 
-def save_high_score(level_id, score):
-    scores = load_high_scores()
-    current_high = scores.get(str(level_id), 0)
-    if score > current_high:
-        scores[str(level_id)] = score
-        with open(HIGH_SCORE_FILE, "w") as f:
-            json.dump(scores, f, indent=2)
-        return True, score
-    return False, current_high
+def save_json(filename, data):
+    with open(filename, "w") as f:
+        json.dump(data, f, indent=2)
 
-def show_transition(stdscr, level_data, score, current_step=None, total_steps=None):
-    is_new_high, best_score = save_high_score(level_data.get("level_id", 1), score)
+def save_player_game_run(player_name, total_score, levels_completed):
+    data = load_json(PLAYER_SCORES_FILE)
+    if player_name not in data:
+        data[player_name] = {"high_score": 0, "runs": []}
+    
+    player = data[player_name]
+    if total_score > player.get("high_score", 0):
+        player["high_score"] = total_score
+        
+    player.setdefault("runs", []).append({
+        "timestamp": time.strftime("%Y-%m-%d %H:%M"),
+        "total_score": total_score,
+        "levels_completed": levels_completed
+    })
+    save_json(PLAYER_SCORES_FILE, data)
+
+def show_transition(stdscr, level_data, score, current_step=None, total_steps=None, cumulative_score=0):
     stdscr.nodelay(False)
     stdscr.erase()
     stdscr.addstr(3, 5, "==================================================", curses.A_BOLD)
     stdscr.addstr(4, 5, f" FINISHED: {level_data.get('title', 'Level')} ", curses.A_REVERSE)
-    stdscr.addstr(5, 5, f" Score Achieved: {score}", curses.A_BOLD)
-    if is_new_high:
-        stdscr.addstr(7, 5, " ★ NEW HIGH SCORE! ★", curses.A_BOLD | curses.A_REVERSE)
-    else:
-        stdscr.addstr(7, 5, f" Personal Best: {best_score}")
-
-    if current_step is not None and total_steps is not None:
-        stdscr.addstr(9, 5, f" Progress: Level {current_step} of {total_steps} Complete", curses.A_BOLD)
+    stdscr.addstr(5, 5, f" Level Score: {score}", curses.A_BOLD)
+    if current_step is not None:
+        stdscr.addstr(6, 5, f" Total Run Score So Far: {cumulative_score}", curses.A_BOLD)
+        stdscr.addstr(8, 5, f" Progress: Level {current_step} of {total_steps} Complete", curses.A_DIM)
 
     stdscr.addstr(11, 5, "Next level loading...", curses.A_DIM)
     stdscr.addstr(12, 5, "Press 'Q' or ESC to return to Menu.")
@@ -120,7 +125,7 @@ def show_transition(stdscr, level_data, score, current_step=None, total_steps=No
     return True
 
 # --- MINIGAME LEVEL HANDLERS ---
-def play_piano_level(stdscr, level_data, step=None, total=None):
+def play_piano_level(stdscr, level_data, step=None, total=None, run_score=0):
     stdscr.nodelay(True)
     stdscr.timeout(0)
     song_file = level_data.get("song_file", "song.mp3")
@@ -178,7 +183,7 @@ def play_piano_level(stdscr, level_data, step=None, total=None):
         height, width = stdscr.getmaxyx()
         lane_width, start_x, hit_line_y = 8, 4, height - 4
 
-        stdscr.addstr(0, 2, f"Song: {song_file} | Time: {current_time:.2f}s | Score: {score} | Combo: {combo}")
+        stdscr.addstr(0, 2, f"Song: {song_file} | Time: {current_time:.2f}s | Level Score: {score} | Run Total: {run_score + score}")
         for i, lane in enumerate(LANES):
             x = start_x + (i * lane_width)
             stdscr.addstr(2, x + 2, f"[{lane}]", curses.A_BOLD)
@@ -201,10 +206,10 @@ def play_piano_level(stdscr, level_data, step=None, total=None):
         if all(n["hit"] or n["missed"] for n in active_notes) and (current_time > (notes[-1]["time"] + 1.0 if notes else 5.0)):
             break
 
-    if user_quit: return False
-    return show_transition(stdscr, level_data, score, step, total)
+    if user_quit: return False, score
+    return show_transition(stdscr, level_data, score, step, total, run_score + score), score
 
-def play_frog_level(stdscr, level_data, step=None, total=None):
+def play_frog_level(stdscr, level_data, step=None, total=None, run_score=0):
     stdscr.nodelay(True)
     stdscr.timeout(0)
     obstacles = level_data.get("obstacles", [])
@@ -230,7 +235,7 @@ def play_frog_level(stdscr, level_data, step=None, total=None):
         stdscr.erase()
         height, width = stdscr.getmaxyx()
         stdscr.addstr(1, 2, f"LEVEL 2: {level_data.get('title')} | Press SPACE to Jump!")
-        stdscr.addstr(2, 2, f"Score: {score} | Time: {current_time:.1f}s")
+        stdscr.addstr(2, 2, f"Level Score: {score} | Run Total: {run_score + score} | Time: {current_time:.1f}s")
 
         ground_y = 10
         stdscr.addstr(ground_y, 0, "_" * (width - 1))
@@ -247,10 +252,10 @@ def play_frog_level(stdscr, level_data, step=None, total=None):
         time.sleep(0.01)
         if obstacles and current_time > (obstacles[-1]["time"] + 2.0): break
 
-    if user_quit: return False
-    return show_transition(stdscr, level_data, score, step, total)
+    if user_quit: return False, score
+    return show_transition(stdscr, level_data, score, step, total, run_score + score), score
 
-def play_echo_level(stdscr, level_data, step=None, total=None):
+def play_echo_level(stdscr, level_data, step=None, total=None, run_score=0):
     sequence = level_data.get("sequence", ["KEY_UP", "KEY_DOWN", "KEY_LEFT", "KEY_RIGHT"])
     key_dict = {curses.KEY_UP: "KEY_UP", curses.KEY_DOWN: "KEY_DOWN", curses.KEY_LEFT: "KEY_LEFT", curses.KEY_RIGHT: "KEY_RIGHT"}
     stdscr.nodelay(False)
@@ -287,11 +292,11 @@ def play_echo_level(stdscr, level_data, step=None, total=None):
             stdscr.addstr(6, 2 + (len(user_seq) * 12), f"[{key_dict[key]}]")
             stdscr.refresh()
 
-    if user_quit: return False
     score = 500 if user_seq == sequence else 0
-    return show_transition(stdscr, level_data, score, step, total)
+    if user_quit: return False, score
+    return show_transition(stdscr, level_data, score, step, total, run_score + score), score
 
-def play_noodle_level(stdscr, level_data, step=None, total=None):
+def play_noodle_level(stdscr, level_data, step=None, total=None, run_score=0):
     stdscr.nodelay(True)
     stdscr.timeout(0)
     noodles = level_data.get("noodles", [])
@@ -309,8 +314,8 @@ def play_noodle_level(stdscr, level_data, step=None, total=None):
         is_holding_space = (key == ord(' '))
 
         stdscr.erase()
-        stdscr.addstr(1, 2, f"LEVEL 4: {level_data.get('title')} | Hold SPACEBAR while noodles pass through mouth!")
-        stdscr.addstr(2, 2, f"Score: {score} | Time: {current_time:.1f}s | Feedback: {feedback}")
+        stdscr.addstr(1, 2, f"LEVEL 4: {level_data.get('title')} | Hold SPACEBAR while noodles pass!")
+        stdscr.addstr(2, 2, f"Level Score: {score} | Run Total: {run_score + score} | Time: {current_time:.1f}s | Feedback: {feedback}")
 
         mouth_x, mouth_y = 15, 6
         stdscr.addstr(mouth_y - 1, mouth_x - 4, "┌──────┐")
@@ -343,10 +348,10 @@ def play_noodle_level(stdscr, level_data, step=None, total=None):
         time.sleep(0.015)
         if noodles and current_time > (noodles[-1]["time"] + noodles[-1]["duration"] + 1.5): break
 
-    if user_quit: return False
-    return show_transition(stdscr, level_data, score, step, total)
+    if user_quit: return False, score
+    return show_transition(stdscr, level_data, score, step, total, run_score + score), score
 
-def play_space_level(stdscr, level_data, step=None, total=None):
+def play_space_level(stdscr, level_data, step=None, total=None, run_score=0):
     stdscr.nodelay(True)
     stdscr.timeout(0)
     enemies = level_data.get("enemies", [])
@@ -385,7 +390,7 @@ def play_space_level(stdscr, level_data, step=None, total=None):
         stdscr.erase()
         height, width = stdscr.getmaxyx()
         stdscr.addstr(1, 2, f"LEVEL 5: {level_data.get('title')} | Press 1, 2, or 3 to shoot beat lasers!")
-        stdscr.addstr(2, 2, f"Score: {score} | Time: {current_time:.1f}s")
+        stdscr.addstr(2, 2, f"Level Score: {score} | Run Total: {run_score + score} | Time: {current_time:.1f}s")
 
         sector_xs = [10, 25, 40]
         ship_y = height - 4
@@ -411,10 +416,10 @@ def play_space_level(stdscr, level_data, step=None, total=None):
         time.sleep(0.01)
         if active_enemies and current_time > (enemies[-1]["time"] + 2.0): break
 
-    if user_quit: return False
-    return show_transition(stdscr, level_data, score, step, total)
+    if user_quit: return False, score
+    return show_transition(stdscr, level_data, score, step, total, run_score + score), score
 
-def play_drum_level(stdscr, level_data, step=None, total=None):
+def play_drum_level(stdscr, level_data, step=None, total=None, run_score=0):
     stdscr.nodelay(True)
     stdscr.timeout(0)
     bpm = level_data.get("bpm", 120)
@@ -443,7 +448,7 @@ def play_drum_level(stdscr, level_data, step=None, total=None):
 
         stdscr.erase()
         stdscr.addstr(1, 2, f"LEVEL 6: {level_data.get('title')} (BPM: {bpm}) | Strike [SPACE/ENTER] on Beat!")
-        stdscr.addstr(2, 2, f"Score: {score} | Time: {current_time:.2f}s")
+        stdscr.addstr(2, 2, f"Level Score: {score} | Run Total: {run_score + score} | Time: {current_time:.2f}s")
 
         ring_state = int(current_time * 8) % 4
         frames = ["(  O  )", "( -O- )", "( |O| )", "( /O/ )"]
@@ -464,10 +469,10 @@ def play_drum_level(stdscr, level_data, step=None, total=None):
         time.sleep(0.01)
         if active_beats and current_time > (beats[-1]["time"] + 1.5): break
 
-    if user_quit: return False
-    return show_transition(stdscr, level_data, score, step, total)
+    if user_quit: return False, score
+    return show_transition(stdscr, level_data, score, step, total, run_score + score), score
 
-def play_chef_level(stdscr, level_data, step=None, total=None):
+def play_chef_level(stdscr, level_data, step=None, total=None, run_score=0):
     stdscr.nodelay(True)
     stdscr.timeout(0)
     chops = level_data.get("chops", [])
@@ -496,7 +501,7 @@ def play_chef_level(stdscr, level_data, step=None, total=None):
 
         stdscr.erase()
         stdscr.addstr(1, 2, f"LEVEL 7: {level_data.get('title')} | Press 'C' or SPACE to Slice Veggies!")
-        stdscr.addstr(2, 2, f"Score: {score} | Time: {current_time:.2f}s")
+        stdscr.addstr(2, 2, f"Level Score: {score} | Run Total: {run_score + score} | Time: {current_time:.2f}s")
 
         knife_char = " | " if (current_time - last_chop_vis) > 0.1 else "\\|/"
         stdscr.addstr(5, 12, f" Knife: {knife_char}")
@@ -512,10 +517,10 @@ def play_chef_level(stdscr, level_data, step=None, total=None):
         time.sleep(0.01)
         if active_chops and current_time > (chops[-1]["time"] + 1.5): break
 
-    if user_quit: return False
-    return show_transition(stdscr, level_data, score, step, total)
+    if user_quit: return False, score
+    return show_transition(stdscr, level_data, score, step, total, run_score + score), score
 
-def play_matrix_level(stdscr, level_data, step=None, total=None):
+def play_matrix_level(stdscr, level_data, step=None, total=None, run_score=0):
     stdscr.nodelay(True)
     stdscr.timeout(0)
     bullets = level_data.get("bullets", [])
@@ -545,7 +550,7 @@ def play_matrix_level(stdscr, level_data, step=None, total=None):
 
         stdscr.erase()
         stdscr.addstr(1, 2, f"LEVEL 8: {level_data.get('title')} | Press D, F, J, K to Dodge!")
-        stdscr.addstr(2, 2, f"Score: {score} | Time: {current_time:.2f}s")
+        stdscr.addstr(2, 2, f"Level Score: {score} | Run Total: {run_score + score} | Time: {current_time:.2f}s")
 
         for i, l in enumerate(LANES):
             stdscr.addstr(4, 6 + (i * 10), f"[{l}]")
@@ -562,34 +567,131 @@ def play_matrix_level(stdscr, level_data, step=None, total=None):
         time.sleep(0.01)
         if active_bullets and current_time > (bullets[-1]["time"] + 1.5): break
 
-    if user_quit: return False
-    return show_transition(stdscr, level_data, score, step, total)
+    if user_quit: return False, score
+    return show_transition(stdscr, level_data, score, step, total, run_score + score), score
 
 # --- LEVEL DISPATCHER ---
-def run_level(stdscr, level_data, step=None, total=None):
+def run_level(stdscr, level_data, step=None, total=None, run_score=0):
     g_type = level_data.get("type", "piano")
-    if g_type == "piano": return play_piano_level(stdscr, level_data, step, total)
-    elif g_type == "frog": return play_frog_level(stdscr, level_data, step, total)
-    elif g_type == "echo": return play_echo_level(stdscr, level_data, step, total)
-    elif g_type == "noodle": return play_noodle_level(stdscr, level_data, step, total)
-    elif g_type == "space": return play_space_level(stdscr, level_data, step, total)
-    elif g_type == "drum": return play_drum_level(stdscr, level_data, step, total)
-    elif g_type == "chef": return play_chef_level(stdscr, level_data, step, total)
-    elif g_type == "matrix": return play_matrix_level(stdscr, level_data, step, total)
-    return True
+    if g_type == "piano": return play_piano_level(stdscr, level_data, step, total, run_score)
+    elif g_type == "frog": return play_frog_level(stdscr, level_data, step, total, run_score)
+    elif g_type == "echo": return play_echo_level(stdscr, level_data, step, total, run_score)
+    elif g_type == "noodle": return play_noodle_level(stdscr, level_data, step, total, run_score)
+    elif g_type == "space": return play_space_level(stdscr, level_data, step, total, run_score)
+    elif g_type == "drum": return play_drum_level(stdscr, level_data, step, total, run_score)
+    elif g_type == "chef": return play_chef_level(stdscr, level_data, step, total, run_score)
+    elif g_type == "matrix": return play_matrix_level(stdscr, level_data, step, total, run_score)
+    return True, 0
 
-# --- EXACT 8-LEVEL RANDOM SHUFFLE MODE ---
-def start_random_mode(stdscr, levels):
+# --- NEW GAME: PLAYER NAME INPUT & 8-LEVEL RUN ---
+def prompt_player_name(stdscr):
+    curses.echo()
+    curses.curs_set(1)
+    stdscr.nodelay(False)
+    stdscr.erase()
+    stdscr.addstr(3, 4, "==================================================", curses.A_BOLD)
+    stdscr.addstr(4, 4, "               NEW PLAYER PROFILE                 ", curses.A_REVERSE)
+    stdscr.addstr(5, 4, "==================================================", curses.A_BOLD)
+    stdscr.addstr(7, 4, "Enter Player Name: ")
+    stdscr.refresh()
+    
+    player_name = stdscr.getstr(7, 23, 20).decode('utf-8').strip()
+    curses.noecho()
+    curses.curs_set(0)
+    
+    return player_name if player_name else "Player_1"
+
+def start_new_player_game(stdscr, levels):
     if not levels: return
-    # Shuffle all available levels exactly once
+    player_name = prompt_player_name(stdscr)
+    
     playlist = list(levels[:8])
     random.shuffle(playlist)
     total_levels = len(playlist)
+    
+    cumulative_score = 0
+    completed_count = 0
 
     for idx, lvl in enumerate(playlist, start=1):
-        continue_game = run_level(stdscr, lvl, step=idx, total=total_levels)
+        continue_game, level_score = run_level(stdscr, lvl, step=idx, total=total_levels, run_score=cumulative_score)
+        cumulative_score += level_score
+        completed_count = idx
         if not continue_game:
             break
+
+    # Save to Player Leaderboard File
+    save_player_game_run(player_name, cumulative_score, completed_count)
+
+    # Show Final Summary
+    stdscr.nodelay(False)
+    stdscr.erase()
+    stdscr.addstr(3, 4, "==================================================", curses.A_BOLD)
+    stdscr.addstr(4, 4, f" GAME OVER - {player_name.upper()}'S RUN SUMMARY ", curses.A_REVERSE)
+    stdscr.addstr(5, 4, "==================================================", curses.A_BOLD)
+    stdscr.addstr(7, 4, f" Total Run Score: {cumulative_score}", curses.A_BOLD)
+    stdscr.addstr(8, 4, f" Levels Completed: {completed_count} / {total_levels}")
+    stdscr.addstr(11, 4, "Score saved to Player Scoreboard!")
+    stdscr.addstr(13, 4, "Press any key to return to Main Menu...")
+    stdscr.refresh()
+    stdscr.getch()
+
+# --- OLD GAMES & PLAYER SCOREBOARD ---
+def show_player_scoreboard(stdscr):
+    data = load_json(PLAYER_SCORES_FILE)
+    stdscr.nodelay(False)
+    
+    while True:
+        stdscr.erase()
+        stdscr.addstr(1, 2, "==========================================================", curses.A_BOLD)
+        stdscr.addstr(2, 2, "            OLD GAMES & PLAYER SCOREBOARD                 ", curses.A_BOLD)
+        stdscr.addstr(3, 2, "==========================================================", curses.A_BOLD)
+
+        if not data:
+            stdscr.addstr(6, 4, "No player history recorded yet. Start a New Game!")
+        else:
+            stdscr.addstr(5, 4, f"{'PLAYER NAME':<20} | {'BEST RUN SCORE':<15} | {'TOTAL RUNS':<10}", curses.A_REVERSE)
+            sorted_players = sorted(data.items(), key=lambda x: x[1].get('high_score', 0), reverse=True)
+            
+            for idx, (p_name, p_data) in enumerate(sorted_players[:10]):
+                runs_count = len(p_data.get("runs", []))
+                best_s = p_data.get("high_score", 0)
+                stdscr.addstr(7 + idx, 4, f"{p_name:<20} | {best_s:<15} | {runs_count:<10}")
+
+        stdscr.addstr(19, 2, "Press [V] to View Specific Player Matches, or 'Q' / ESC for Menu.")
+        stdscr.refresh()
+
+        key = stdscr.getch()
+        if key in [ord('q'), ord('Q'), 27]:
+            break
+        elif key in [ord('v'), ord('V')] and data:
+            view_individual_player_history(stdscr, data)
+
+def view_individual_player_history(stdscr, data):
+    p_name = prompt_player_name(stdscr)
+    if p_name not in data:
+        stdscr.erase()
+        stdscr.addstr(5, 4, f"No records found for player: '{p_name}'", curses.A_BOLD)
+        stdscr.addstr(7, 4, "Press any key to return...")
+        stdscr.refresh()
+        stdscr.getch()
+        return
+
+    player_data = data[p_name]
+    runs = player_data.get("runs", [])
+
+    stdscr.erase()
+    stdscr.addstr(1, 2, f"=== MATCH HISTORY FOR: {p_name.upper()} ===", curses.A_BOLD)
+    stdscr.addstr(3, 4, f"{'DATE/TIME':<20} | {'TOTAL SCORE':<12} | {'LEVELS COMPLETED':<15}", curses.A_REVERSE)
+
+    for idx, run in enumerate(reversed(runs[-10:])):
+        ts = run.get("timestamp", "N/A")
+        score = run.get("total_score", 0)
+        completed = run.get("levels_completed", 0)
+        stdscr.addstr(5 + idx, 4, f"{ts:<20} | {score:<12} | {completed:<15}")
+
+    stdscr.addstr(18, 2, "Press any key to back...")
+    stdscr.refresh()
+    stdscr.getch()
 
 # --- MAIN MENU ---
 def main(stdscr):
@@ -601,33 +703,26 @@ def main(stdscr):
     else: levels = []
 
     while True:
-        high_scores = load_high_scores()
         stdscr.nodelay(False)
         stdscr.erase()
         stdscr.addstr(1, 2, "==========================================================", curses.A_BOLD)
-        stdscr.addstr(2, 2, "         RHYTHM GAME ENGINE (8 RANDOM LEVEL MODE)        ", curses.A_BOLD)
+        stdscr.addstr(2, 2, "               RHYTHM GAME ENGINE MAIN MENU               ", curses.A_BOLD)
         stdscr.addstr(3, 2, "==========================================================", curses.A_BOLD)
 
-        stdscr.addstr(6, 4, "[R] PLAY 8 RANDOM LEVELS (Single Pass)", curses.A_BOLD | curses.A_REVERSE)
+        stdscr.addstr(6, 6, "[1] NEW GAME          (Enter Name & Run 8 Random Levels)", curses.A_BOLD)
+        stdscr.addstr(8, 6, "[2] OLD GAMES / BOARD (View Player Profiles & Leaderboards)")
+        stdscr.addstr(10, 6, "[3] EXIT GAME", curses.A_DIM)
 
-        stdscr.addstr(8, 2, "--- Practice Individual Levels ---", curses.A_DIM)
-        for i, lvl in enumerate(levels[:8]):
-            lvl_id = str(lvl.get("level_id", i + 1))
-            best = high_scores.get(lvl_id, 0)
-            title = lvl.get('title', 'Untitled')
-            stdscr.addstr(10 + i, 4, f"{i + 1}. {title:<36} | High Score: {best}")
-
-        stdscr.addstr(19, 2, "Press 'R' for Random Mode, 1-8 for Practice, or 'Q' to Quit.")
+        stdscr.addstr(15, 2, "Press 1, 2, or 3 to make a selection.")
         stdscr.refresh()
 
         key = stdscr.getch()
-        if key in [ord('q'), ord('Q'), 27]: break
-        elif key in [ord('r'), ord('R')]:
-            start_random_mode(stdscr, levels)
-        elif key in [ord(str(n)) for n in range(1, 9)]:
-            idx = int(chr(key)) - 1
-            if idx < len(levels):
-                run_level(stdscr, levels[idx])
+        if key in [ord('3'), ord('q'), ord('Q'), 27]: 
+            break
+        elif key == ord('1'):
+            start_new_player_game(stdscr, levels)
+        elif key == ord('2'):
+            show_player_scoreboard(stdscr)
 
 if __name__ == "__main__":
     curses.wrapper(main)
