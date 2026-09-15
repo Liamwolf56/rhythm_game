@@ -1,0 +1,57 @@
+{
+  "l": {
+    "high_score": 24505,
+    "runs": [
+      {
+        "timestamp": "2026-09-09 13:31",
+        "total_score": 24505,
+        "levels_completed": 8
+      }
+    ]
+  },
+  "w": {
+    "high_score": 20460,
+    "runs": [
+      {
+        "timestamp": "2026-09-15 19:56",
+        "total_score": 3765,
+        "levels_completed": 3
+      },
+      {
+        "timestamp": "2026-09-15 20:03",
+        "total_score": 4000,
+        "levels_completed": 3
+      },
+      {
+        "timestamp": "2026-09-15 20:06",
+        "total_score": 3300,
+        "levels_completed": 2
+      },
+      {
+        "timestamp": "2026-09-15 20:12",
+        "total_score": 1000,
+        "levels_completed": 2
+      },
+      {
+        "timestamp": "2026-09-15 20:16",
+        "total_score": 1200,
+        "levels_completed": 1
+      },
+      {
+        "timestamp": "2026-09-15 20:25",
+        "total_score": 20460,
+        "levels_completed": 8
+      }
+    ]
+  },
+  "\u001b": {
+    "high_score": 100,
+    "runs": [
+      {
+        "timestamp": "2026-09-15 20:09",
+        "total_score": 100,
+        "levels_completed": 1
+      }
+    ]
+  }
+}

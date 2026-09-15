@@ -10,12 +10,12 @@ os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = '1'
 import pygame
 import numpy as np
 
-# --- AUDIO INITIALIZATION ---
+# --- LOW-LATENCY AUDIO INITIALIZATION ---
 AUDIO_AVAILABLE = False
 for driver in ['alsa', 'pulse', 'dsp', 'dummy']:
     try:
         os.environ['SDL_AUDIODRIVER'] = driver
-        pygame.mixer.init(frequency=44100, size=-16, channels=2, buffer=512)
+        pygame.mixer.init(frequency=44100, size=-16, channels=2, buffer=256)
         if driver != 'dummy':
             AUDIO_AVAILABLE = True
         break
@@ -33,8 +33,20 @@ KEY_MAP = {
 
 HIGH_SCORE_FILE = "high_scores.json"
 PLAYER_SCORES_FILE = "player_scores.json"
+DEFAULT_SONG_FILE = "Blip.mp3"
+POINT_SOUND_FILE = "Blip.mp3"
 
-# --- SOUND GENERATORS ---
+# --- SOUND LOAD & GENERATORS ---
+def load_point_sound():
+    if os.path.exists(POINT_SOUND_FILE):
+        try:
+            return pygame.mixer.Sound(POINT_SOUND_FILE)
+        except Exception:
+            pass
+    return None
+
+POINT_SOUND = load_point_sound()
+
 def generate_point_chime(pitch="deep", duration=0.05):
     try:
         sample_rate = 44100
@@ -50,30 +62,73 @@ def generate_point_chime(pitch="deep", duration=0.05):
         return None
 
 try:
-    DEEP_SOUND = generate_point_chime("deep")
-    DOOP_SOUND = generate_point_chime("doop")
+    FALLBACK_SOUND = generate_point_chime("deep")
 except Exception:
-    DEEP_SOUND, DOOP_SOUND = None, None
+    FALLBACK_SOUND = None
 
 def play_point_rhythm(toggle_counter):
-    sound_played = False
-    if toggle_counter % 2 == 0:
-        if DEEP_SOUND:
-            try:
-                DEEP_SOUND.play()
-                sound_played = True
-            except Exception: pass
-    else:
-        if DOOP_SOUND:
-            try:
-                DOOP_SOUND.play()
-                sound_played = True
-            except Exception: pass
+    if POINT_SOUND:
+        try:
+            POINT_SOUND.play()
+        except Exception:
+            pass
+    elif FALLBACK_SOUND:
+        try:
+            FALLBACK_SOUND.play()
+        except Exception:
+            pass
 
     sys.stdout.write('\a')
     sys.stdout.flush()
 
-# --- HIGH SCORE & PLAYER PERSISTENCE ---
+# --- INSTANT AUDIO CHANNEL CONTROLLER ---
+MUSIC_CHANNEL = None
+CURRENT_SONG_SOUND = None
+
+def init_level_music(song_file):
+    global MUSIC_CHANNEL, CURRENT_SONG_SOUND
+    target_file = song_file if os.path.exists(song_file) else DEFAULT_SONG_FILE
+    if AUDIO_AVAILABLE and os.path.exists(target_file):
+        try:
+            MUSIC_CHANNEL = pygame.mixer.Channel(0)
+            CURRENT_SONG_SOUND = pygame.mixer.Sound(target_file)
+            MUSIC_CHANNEL.play(CURRENT_SONG_SOUND, loops=-1)
+            MUSIC_CHANNEL.set_volume(0.0)
+            MUSIC_CHANNEL.pause()
+            return True
+        except Exception:
+            return False
+    return False
+
+def set_music_playing(should_play):
+    """
+    Instantly silences audio output by zeroing channel volume before 
+    toggling pause, preventing hardware buffer bleeds.
+    """
+    global MUSIC_CHANNEL
+    if not AUDIO_AVAILABLE or MUSIC_CHANNEL is None:
+        return
+    try:
+        if should_play:
+            MUSIC_CHANNEL.set_volume(1.0)
+            if MUSIC_CHANNEL.get_busy():
+                MUSIC_CHANNEL.unpause()
+        else:
+            MUSIC_CHANNEL.set_volume(0.0)
+            MUSIC_CHANNEL.pause()
+    except Exception:
+        pass
+
+def stop_level_music():
+    global MUSIC_CHANNEL
+    if AUDIO_AVAILABLE and MUSIC_CHANNEL:
+        try:
+            MUSIC_CHANNEL.set_volume(0.0)
+            MUSIC_CHANNEL.stop()
+        except Exception:
+            pass
+
+# --- PERSISTENCE ---
 def load_json(filename):
     if os.path.exists(filename):
         try:
@@ -91,11 +146,11 @@ def save_player_game_run(player_name, total_score, levels_completed):
     data = load_json(PLAYER_SCORES_FILE)
     if player_name not in data:
         data[player_name] = {"high_score": 0, "runs": []}
-    
+
     player = data[player_name]
     if total_score > player.get("high_score", 0):
         player["high_score"] = total_score
-        
+
     player.setdefault("runs", []).append({
         "timestamp": time.strftime("%Y-%m-%d %H:%M"),
         "total_score": total_score,
@@ -104,6 +159,7 @@ def save_player_game_run(player_name, total_score, levels_completed):
     save_json(PLAYER_SCORES_FILE, data)
 
 def show_transition(stdscr, level_data, score, current_step=None, total_steps=None, cumulative_score=0):
+    stop_level_music()
     stdscr.nodelay(False)
     stdscr.erase()
     stdscr.addstr(3, 5, "==================================================", curses.A_BOLD)
@@ -128,14 +184,18 @@ def show_transition(stdscr, level_data, score, current_step=None, total_steps=No
 def play_piano_level(stdscr, level_data, step=None, total=None, run_score=0):
     stdscr.nodelay(True)
     stdscr.timeout(0)
-    song_file = level_data.get("song_file", "song.mp3")
+    song_file = level_data.get("song_file", DEFAULT_SONG_FILE)
     notes = level_data.get("notes", [])
     speed = level_data.get("speed", 6.0)
     hit_window = level_data.get("hit_window", 0.350)
 
     score, combo, feedback, feedback_time = 0, 0, "", 0
     hit_count = 0
+    last_hit_time = -1.0
+    HIT_AUDIO_DURATION = 0.20
     active_notes = [{"lane": n["lane"], "time": n["time"], "hit": False, "missed": False} for n in notes]
+
+    init_level_music(song_file)
 
     for c in range(2, 0, -1):
         stdscr.erase()
@@ -167,6 +227,7 @@ def play_piano_level(stdscr, level_data, step=None, total=None, run_score=0):
                 score += 100
                 combo += 1
                 hit_count += 1
+                last_hit_time = current_time
                 play_point_rhythm(hit_count)
                 feedback, feedback_time = "PERFECT!", current_time
             else:
@@ -178,6 +239,11 @@ def play_piano_level(stdscr, level_data, step=None, total=None, run_score=0):
                 note["missed"] = True
                 combo = 0
                 feedback, feedback_time = "MISS!", current_time
+
+        if current_time - last_hit_time < HIT_AUDIO_DURATION:
+            set_music_playing(True)
+        else:
+            set_music_playing(False)
 
         stdscr.erase()
         height, width = stdscr.getmaxyx()
@@ -206,16 +272,21 @@ def play_piano_level(stdscr, level_data, step=None, total=None, run_score=0):
         if all(n["hit"] or n["missed"] for n in active_notes) and (current_time > (notes[-1]["time"] + 1.0 if notes else 5.0)):
             break
 
-    if user_quit: return False, score
+    if user_quit:
+        stop_level_music()
+        return False, score
     return show_transition(stdscr, level_data, score, step, total, run_score + score), score
 
 def play_frog_level(stdscr, level_data, step=None, total=None, run_score=0):
     stdscr.nodelay(True)
     stdscr.timeout(0)
+    song_file = level_data.get("song_file", DEFAULT_SONG_FILE)
     obstacles = level_data.get("obstacles", [])
     score, start_time, is_jumping, jump_start = 0, time.perf_counter(), False, 0
     hit_count = 0
     user_quit = False
+
+    init_level_music(song_file)
 
     while True:
         current_time = time.perf_counter() - start_time
@@ -230,7 +301,11 @@ def play_frog_level(stdscr, level_data, step=None, total=None, run_score=0):
             hit_count += 1
             play_point_rhythm(hit_count)
 
-        if is_jumping and (current_time - jump_start > 0.4): is_jumping = False
+        if is_jumping and (current_time - jump_start <= 0.4):
+            set_music_playing(True)
+        else:
+            is_jumping = False
+            set_music_playing(False)
 
         stdscr.erase()
         height, width = stdscr.getmaxyx()
@@ -252,13 +327,18 @@ def play_frog_level(stdscr, level_data, step=None, total=None, run_score=0):
         time.sleep(0.01)
         if obstacles and current_time > (obstacles[-1]["time"] + 2.0): break
 
-    if user_quit: return False, score
+    if user_quit:
+        stop_level_music()
+        return False, score
     return show_transition(stdscr, level_data, score, step, total, run_score + score), score
 
 def play_echo_level(stdscr, level_data, step=None, total=None, run_score=0):
+    song_file = level_data.get("song_file", DEFAULT_SONG_FILE)
     sequence = level_data.get("sequence", ["KEY_UP", "KEY_DOWN", "KEY_LEFT", "KEY_RIGHT"])
     key_dict = {curses.KEY_UP: "KEY_UP", curses.KEY_DOWN: "KEY_DOWN", curses.KEY_LEFT: "KEY_LEFT", curses.KEY_RIGHT: "KEY_RIGHT"}
     stdscr.nodelay(False)
+
+    init_level_music(song_file)
 
     stdscr.erase()
     stdscr.addstr(1, 2, f"LEVEL 3: {level_data.get('title')} - Watch sequence:")
@@ -280,18 +360,27 @@ def play_echo_level(stdscr, level_data, step=None, total=None, run_score=0):
     user_seq = []
     user_quit = False
     hit_count = 0
-    while len(user_seq) < len(sequence):
+    for idx, expected in enumerate(sequence):
         key = stdscr.getch()
         if key == 27:
             user_quit = True
             break
         if key in key_dict:
-            user_seq.append(key_dict[key])
-            hit_count += 1
-            play_point_rhythm(hit_count)
-            stdscr.addstr(6, 2 + (len(user_seq) * 12), f"[{key_dict[key]}]")
+            pressed_key = key_dict[key]
+            user_seq.append(pressed_key)
+            if pressed_key == expected:
+                hit_count += 1
+                play_point_rhythm(hit_count)
+                set_music_playing(True)
+                time.sleep(0.2)
+                set_music_playing(False)
+            else:
+                set_music_playing(False)
+
+            stdscr.addstr(6, 2 + (len(user_seq) * 12), f"[{pressed_key}]")
             stdscr.refresh()
 
+    stop_level_music()
     score = 500 if user_seq == sequence else 0
     if user_quit: return False, score
     return show_transition(stdscr, level_data, score, step, total, run_score + score), score
@@ -299,10 +388,13 @@ def play_echo_level(stdscr, level_data, step=None, total=None, run_score=0):
 def play_noodle_level(stdscr, level_data, step=None, total=None, run_score=0):
     stdscr.nodelay(True)
     stdscr.timeout(0)
+    song_file = level_data.get("song_file", DEFAULT_SONG_FILE)
     noodles = level_data.get("noodles", [])
     score, hit_count, feedback = 0, 0, ""
     start_time = time.perf_counter()
     user_quit = False
+
+    init_level_music(song_file)
 
     while True:
         current_time = time.perf_counter() - start_time
@@ -331,8 +423,8 @@ def play_noodle_level(stdscr, level_data, step=None, total=None, run_score=0):
             tail_x = int(head_x + (ndl["duration"] * 10))
 
             if start_t <= current_time <= end_t:
-                actively_slurping = True
                 if is_holding_space:
+                    actively_slurping = True
                     score += 5
                     hit_count += 1
                     play_point_rhythm(hit_count)
@@ -344,24 +436,33 @@ def play_noodle_level(stdscr, level_data, step=None, total=None, run_score=0):
                 for x in range(max(2, head_x), min(60, tail_x)):
                     if x != mouth_x: stdscr.addch(mouth_y, x, '~')
 
+        set_music_playing(actively_slurping)
+
         stdscr.refresh()
         time.sleep(0.015)
         if noodles and current_time > (noodles[-1]["time"] + noodles[-1]["duration"] + 1.5): break
 
-    if user_quit: return False, score
+    if user_quit:
+        stop_level_music()
+        return False, score
     return show_transition(stdscr, level_data, score, step, total, run_score + score), score
 
 def play_space_level(stdscr, level_data, step=None, total=None, run_score=0):
     stdscr.nodelay(True)
     stdscr.timeout(0)
+    song_file = level_data.get("song_file", DEFAULT_SONG_FILE)
     enemies = level_data.get("enemies", [])
     speed = level_data.get("speed", 5.0)
     hit_window = level_data.get("hit_window", 0.350)
     active_enemies = [{"sector": e["sector"], "time": e["time"], "destroyed": False} for e in enemies]
 
     score, hit_count, lasers = 0, 0, []
+    last_hit_time = -1.0
+    HIT_AUDIO_DURATION = 0.20
     start_time = time.perf_counter()
     user_quit = False
+
+    init_level_music(song_file)
 
     while True:
         current_time = time.perf_counter() - start_time
@@ -377,7 +478,6 @@ def play_space_level(stdscr, level_data, step=None, total=None, run_score=0):
 
         if pressed_sector != -1:
             lasers.append({"sector": pressed_sector, "start_time": current_time})
-
             for enemy in active_enemies:
                 if enemy["sector"] == pressed_sector and not enemy["destroyed"]:
                     diff = abs(enemy["time"] - current_time)
@@ -385,7 +485,13 @@ def play_space_level(stdscr, level_data, step=None, total=None, run_score=0):
                         enemy["destroyed"] = True
                         score += 200
                         hit_count += 1
+                        last_hit_time = current_time
                         play_point_rhythm(hit_count)
+
+        if current_time - last_hit_time < HIT_AUDIO_DURATION:
+            set_music_playing(True)
+        else:
+            set_music_playing(False)
 
         stdscr.erase()
         height, width = stdscr.getmaxyx()
@@ -416,20 +522,27 @@ def play_space_level(stdscr, level_data, step=None, total=None, run_score=0):
         time.sleep(0.01)
         if active_enemies and current_time > (enemies[-1]["time"] + 2.0): break
 
-    if user_quit: return False, score
+    if user_quit:
+        stop_level_music()
+        return False, score
     return show_transition(stdscr, level_data, score, step, total, run_score + score), score
 
 def play_drum_level(stdscr, level_data, step=None, total=None, run_score=0):
     stdscr.nodelay(True)
     stdscr.timeout(0)
+    song_file = level_data.get("song_file", DEFAULT_SONG_FILE)
     bpm = level_data.get("bpm", 120)
     beats = level_data.get("beats", [])
     hit_window = level_data.get("hit_window", 0.250)
 
     active_beats = [{"type": b["type"], "time": b["time"], "hit": False} for b in beats]
     score, hit_count = 0, 0
+    last_hit_time = -1.0
+    HIT_AUDIO_DURATION = 0.20
     start_time = time.perf_counter()
     user_quit = False
+
+    init_level_music(song_file)
 
     while True:
         current_time = time.perf_counter() - start_time
@@ -444,7 +557,13 @@ def play_drum_level(stdscr, level_data, step=None, total=None, run_score=0):
                     b["hit"] = True
                     score += 150
                     hit_count += 1
+                    last_hit_time = current_time
                     play_point_rhythm(hit_count)
+
+        if current_time - last_hit_time < HIT_AUDIO_DURATION:
+            set_music_playing(True)
+        else:
+            set_music_playing(False)
 
         stdscr.erase()
         stdscr.addstr(1, 2, f"LEVEL 6: {level_data.get('title')} (BPM: {bpm}) | Strike [SPACE/ENTER] on Beat!")
@@ -469,19 +588,26 @@ def play_drum_level(stdscr, level_data, step=None, total=None, run_score=0):
         time.sleep(0.01)
         if active_beats and current_time > (beats[-1]["time"] + 1.5): break
 
-    if user_quit: return False, score
+    if user_quit:
+        stop_level_music()
+        return False, score
     return show_transition(stdscr, level_data, score, step, total, run_score + score), score
 
 def play_chef_level(stdscr, level_data, step=None, total=None, run_score=0):
     stdscr.nodelay(True)
     stdscr.timeout(0)
+    song_file = level_data.get("song_file", DEFAULT_SONG_FILE)
     chops = level_data.get("chops", [])
     hit_window = level_data.get("hit_window", 0.300)
     active_chops = [{"time": c["time"], "hit": False} for c in chops]
 
     score, hit_count, last_chop_vis = 0, 0, 0
+    last_hit_time = -1.0
+    HIT_AUDIO_DURATION = 0.20
     start_time = time.perf_counter()
     user_quit = False
+
+    init_level_music(song_file)
 
     while True:
         current_time = time.perf_counter() - start_time
@@ -497,7 +623,13 @@ def play_chef_level(stdscr, level_data, step=None, total=None, run_score=0):
                     c["hit"] = True
                     score += 120
                     hit_count += 1
+                    last_hit_time = current_time
                     play_point_rhythm(hit_count)
+
+        if current_time - last_hit_time < HIT_AUDIO_DURATION:
+            set_music_playing(True)
+        else:
+            set_music_playing(False)
 
         stdscr.erase()
         stdscr.addstr(1, 2, f"LEVEL 7: {level_data.get('title')} | Press 'C' or SPACE to Slice Veggies!")
@@ -517,19 +649,26 @@ def play_chef_level(stdscr, level_data, step=None, total=None, run_score=0):
         time.sleep(0.01)
         if active_chops and current_time > (chops[-1]["time"] + 1.5): break
 
-    if user_quit: return False, score
+    if user_quit:
+        stop_level_music()
+        return False, score
     return show_transition(stdscr, level_data, score, step, total, run_score + score), score
 
 def play_matrix_level(stdscr, level_data, step=None, total=None, run_score=0):
     stdscr.nodelay(True)
     stdscr.timeout(0)
+    song_file = level_data.get("song_file", DEFAULT_SONG_FILE)
     bullets = level_data.get("bullets", [])
     hit_window = level_data.get("hit_window", 0.350)
     active_bullets = [{"lane": b["lane"], "time": b["time"], "dodged": False} for b in bullets]
 
     score, hit_count = 0, 0
+    last_hit_time = -1.0
+    HIT_AUDIO_DURATION = 0.20
     start_time = time.perf_counter()
     user_quit = False
+
+    init_level_music(song_file)
 
     while True:
         current_time = time.perf_counter() - start_time
@@ -546,7 +685,13 @@ def play_matrix_level(stdscr, level_data, step=None, total=None, run_score=0):
                         b["dodged"] = True
                         score += 250
                         hit_count += 1
+                        last_hit_time = current_time
                         play_point_rhythm(hit_count)
+
+        if current_time - last_hit_time < HIT_AUDIO_DURATION:
+            set_music_playing(True)
+        else:
+            set_music_playing(False)
 
         stdscr.erase()
         stdscr.addstr(1, 2, f"LEVEL 8: {level_data.get('title')} | Press D, F, J, K to Dodge!")
@@ -567,7 +712,9 @@ def play_matrix_level(stdscr, level_data, step=None, total=None, run_score=0):
         time.sleep(0.01)
         if active_bullets and current_time > (bullets[-1]["time"] + 1.5): break
 
-    if user_quit: return False, score
+    if user_quit:
+        stop_level_music()
+        return False, score
     return show_transition(stdscr, level_data, score, step, total, run_score + score), score
 
 # --- LEVEL DISPATCHER ---
@@ -583,32 +730,32 @@ def run_level(stdscr, level_data, step=None, total=None, run_score=0):
     elif g_type == "matrix": return play_matrix_level(stdscr, level_data, step, total, run_score)
     return True, 0
 
-# --- NEW GAME: PLAYER NAME INPUT & 8-LEVEL RUN ---
+# --- NEW GAME ROUTINE ---
 def prompt_player_name(stdscr):
     curses.echo()
     curses.curs_set(1)
     stdscr.nodelay(False)
     stdscr.erase()
     stdscr.addstr(3, 4, "==================================================", curses.A_BOLD)
-    stdscr.addstr(4, 4, "               NEW PLAYER PROFILE                 ", curses.A_REVERSE)
+    stdscr.addstr(4, 4, "                NEW PLAYER PROFILE                 ", curses.A_REVERSE)
     stdscr.addstr(5, 4, "==================================================", curses.A_BOLD)
     stdscr.addstr(7, 4, "Enter Player Name: ")
     stdscr.refresh()
-    
+
     player_name = stdscr.getstr(7, 23, 20).decode('utf-8').strip()
     curses.noecho()
     curses.curs_set(0)
-    
+
     return player_name if player_name else "Player_1"
 
 def start_new_player_game(stdscr, levels):
     if not levels: return
     player_name = prompt_player_name(stdscr)
-    
+
     playlist = list(levels[:8])
     random.shuffle(playlist)
     total_levels = len(playlist)
-    
+
     cumulative_score = 0
     completed_count = 0
 
@@ -619,10 +766,8 @@ def start_new_player_game(stdscr, levels):
         if not continue_game:
             break
 
-    # Save to Player Leaderboard File
     save_player_game_run(player_name, cumulative_score, completed_count)
 
-    # Show Final Summary
     stdscr.nodelay(False)
     stdscr.erase()
     stdscr.addstr(3, 4, "==================================================", curses.A_BOLD)
@@ -635,15 +780,15 @@ def start_new_player_game(stdscr, levels):
     stdscr.refresh()
     stdscr.getch()
 
-# --- OLD GAMES & PLAYER SCOREBOARD ---
+# --- SCOREBOARD ---
 def show_player_scoreboard(stdscr):
     data = load_json(PLAYER_SCORES_FILE)
     stdscr.nodelay(False)
-    
+
     while True:
         stdscr.erase()
         stdscr.addstr(1, 2, "==========================================================", curses.A_BOLD)
-        stdscr.addstr(2, 2, "            OLD GAMES & PLAYER SCOREBOARD                 ", curses.A_BOLD)
+        stdscr.addstr(2, 2, "             OLD GAMES & PLAYER SCOREBOARD                 ", curses.A_BOLD)
         stdscr.addstr(3, 2, "==========================================================", curses.A_BOLD)
 
         if not data:
@@ -651,7 +796,7 @@ def show_player_scoreboard(stdscr):
         else:
             stdscr.addstr(5, 4, f"{'PLAYER NAME':<20} | {'BEST RUN SCORE':<15} | {'TOTAL RUNS':<10}", curses.A_REVERSE)
             sorted_players = sorted(data.items(), key=lambda x: x[1].get('high_score', 0), reverse=True)
-            
+
             for idx, (p_name, p_data) in enumerate(sorted_players[:10]):
                 runs_count = len(p_data.get("runs", []))
                 best_s = p_data.get("high_score", 0)
@@ -693,7 +838,7 @@ def view_individual_player_history(stdscr, data):
     stdscr.refresh()
     stdscr.getch()
 
-# --- MAIN MENU ---
+# --- MAIN ENGINE ENTRY ---
 def main(stdscr):
     curses.curs_set(0)
 
@@ -706,7 +851,7 @@ def main(stdscr):
         stdscr.nodelay(False)
         stdscr.erase()
         stdscr.addstr(1, 2, "==========================================================", curses.A_BOLD)
-        stdscr.addstr(2, 2, "               RHYTHM GAME ENGINE MAIN MENU               ", curses.A_BOLD)
+        stdscr.addstr(2, 2, "                RHYTHM GAME ENGINE MAIN MENU               ", curses.A_BOLD)
         stdscr.addstr(3, 2, "==========================================================", curses.A_BOLD)
 
         stdscr.addstr(6, 6, "[1] NEW GAME          (Enter Name & Run 8 Random Levels)", curses.A_BOLD)
@@ -717,7 +862,7 @@ def main(stdscr):
         stdscr.refresh()
 
         key = stdscr.getch()
-        if key in [ord('3'), ord('q'), ord('Q'), 27]: 
+        if key in [ord('3'), ord('q'), ord('Q'), 27]:
             break
         elif key == ord('1'):
             start_new_player_game(stdscr, levels)
