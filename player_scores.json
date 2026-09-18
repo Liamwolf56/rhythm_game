@@ -41,6 +41,11 @@
         "timestamp": "2026-09-15 20:25",
         "total_score": 20460,
         "levels_completed": 8
+      },
+      {
+        "timestamp": "2026-09-19 00:26",
+        "total_score": 2150,
+        "levels_completed": 2
       }
     ]
   },
@@ -51,6 +56,26 @@
         "timestamp": "2026-09-15 20:09",
         "total_score": 100,
         "levels_completed": 1
+      }
+    ]
+  },
+  "r": {
+    "high_score": 22870,
+    "runs": [
+      {
+        "timestamp": "2026-09-16 11:13",
+        "total_score": 22870,
+        "levels_completed": 8
+      }
+    ]
+  },
+  "q": {
+    "high_score": 6650,
+    "runs": [
+      {
+        "timestamp": "2026-09-18 23:05",
+        "total_score": 6650,
+        "levels_completed": 3
       }
     ]
   }
