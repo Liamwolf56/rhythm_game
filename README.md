@@ -5,26 +5,26 @@ A feature-packed, low-latency terminal rhythm game built using Python, `curses`,
 ## 🚀 Features
 
 * **8 Unique Level Modes**:
-  * **Piano / Note Lanes**: Hit falling notes on the `D`, `F`, `J`, and `K` keys.
-  * **Frog Jump**: Jump over obstacles on beat using the spacebar.
+  * **Piano / Note Lanes**: Hit falling notes on `D`, `F`, `J`, and `K`.
+  * **Frog Jump**: Jump over obstacles on beat using `SPACE`.
   * **Memory Echo**: Memorize and repeat arrow key sequences.
-  * **Noodle Slurp**: Press and hold the spacebar while noodles pass through the target zone.
-  * **Space Shooter**: Fire beat lasers across 3 sectors using keys `1`, `2`, and `3`.
+  * **Noodle Slurp**: Press and hold `SPACE` while noodles pass through the target zone.
+  * **Space Shooter**: Fire beat lasers across 3 sectors using `1`, `2`, and `3`.
   * **Drum Kit**: Strike `SPACE` or `ENTER` on the beat marker.
   * **Chef Slice**: Time your chops with `C` or `SPACE` to slice passing veggies.
   * **Matrix Dodge**: Dodge incoming matrix attacks using `D`, `F`, `J`, and `K`.
-* **Low-Latency Audio Engine**: Built with a custom `pygame.mixer` channel controller that eliminates buffer bleeding and dynamically handles hit sounds and music transitions.
-* **Persistent Player Profiles & Scoreboards**: Save individual run histories, view high scores, and track match logs locally in JSON format.
-* **Custom Audio Fallbacks**: Includes support for default audio tracks (`Blip.mp3`) alongside dynamically synthesized point sound fallbacks.
+* **Low-Latency Audio Engine**: Custom `pygame.mixer` channel controller eliminating buffer bleeding, dynamically managing `Blip.mp3` hit triggers and track transitions.
+* **Persistent Scoreboards**: Save profile run histories, view high scores, and review match logs stored locally in JSON format.
+* **1-Click Desktop App Launcher**: Integrated Windows batch (`.bat`) and VBScript launch triggers to run the game directly from your desktop without touching the terminal.
 
 ## 🛠️ Requirements
 
 * Python 3.8+
 * `pygame`
 * `numpy`
-* `windows-curses` (if running natively on Windows; standard `curses` is built into WSL/Linux/macOS)
+* WSL / Linux or `windows-curses` for native Windows environments
 
-## 📦 Installation
+## 📦 Quick Start & Installation
 
 1. **Clone the repository**:
    ```bash
@@ -34,27 +34,31 @@ Install dependencies:
 
 Bash
 pip install pygame numpy
-Run the game:
+Launch from Terminal:
 
 Bash
-python rhythm_json.py
+python3 rhythm_json.py
+🖥️ Running as a Desktop App (Windows / WSL)
+Double-click Play_Rhythm_Game.bat generated in your repository root (or Desktop shortcut) to launch the game instantly in a dedicated window without manually entering terminal commands.
+
 🎮 How to Play
 Launch the game and select [1] NEW GAME from the main menu.
 
 Enter your player profile name.
 
-Complete 8 randomized level challenges.
+Play through 8 randomized level challenges.
 
-Check your overall performance and match history on the [2] OLD GAMES / BOARD scoreboard!
+Review your match records on the [2] OLD GAMES / BOARD scoreboard!
 
 
 ---
 
-### Push the README to GitHub
+### Save and Push to GitHub
 
-Once you've updated your local `README.md` file, save it and run these commands in your WSL terminal:
+To commit this final `README.md` update directly to your repository:
 
 ```bash
 git add README.md
-git commit -m "Update README with 8-level modes, audio engine details, and player scoreboards"
+git commit -m "Docs: update README with desktop launcher instructions"
+git pull --rebase origin main
 git push origin main
